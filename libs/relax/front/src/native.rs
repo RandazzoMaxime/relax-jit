@@ -1429,6 +1429,7 @@ fn link(lib_path: &str, out: &Outputs, triple: &str, resolvable: Resolvable) -> 
     // JIT callers have no undefined symbols at this link step. Retain shared
     // libraries and every member of implicit static libraries for later lookup.
     if cfg!(target_os = "linux") {
+        cmd.arg("-Wl,--allow-multiple-definition");
         cmd.args(["-Wl,--no-as-needed", "-Wl,--whole-archive"]);
     }
     let mut linked = std::collections::HashSet::new();
