@@ -204,3 +204,41 @@ know.
 
 Start in compiler/src/sandbox/script.rs (`entry`, the domain's table) and sandbox/broker.rs (the
 folders and the walk); the decision is relax-front unitgraph.rs `script_confined`.
+
+## 10. A bare trait object from a `$x:path` or `$x:ident` fragment takes the wrong edition
+
+`&Trait` without `dyn` is a trait object up to edition 2018 and E0782 from 2021. rustc decides by
+the edition of the type's span (rustc_hir_analysis `prohibit_or_lint_bare_trait_object_ty`:
+`self_ty.span.edition().at_least_rust_2021()`), and the span of a type made of a `path` or `ident`
+fragment starts at the metavariable in the macro's definition (mbe/transcribe.rs: the fragment is
+pasted with the metavariable's span). A `ty` or `tt` fragment keeps its own span.
+
+A workspace of two crates: `mac` (edition 2015) with
+
+```rust
+#[macro_export] macro_rules! by_path { ($x:path) => { const _: Option<&$x> = None; }; }
+#[macro_export] macro_rules! by_ident { ($x:ident) => { const _: Option<&$x> = None; }; }
+#[macro_export] macro_rules! by_ty { ($x:ty) => { const _: Option<&$x> = None; }; }
+#[macro_export] macro_rules! own { () => { pub trait Own {} const _: Option<&Own> = None; }; }
+```
+
+and `user` (edition 2021) with `trait T {} mac::by_path!(T); fn main() {}`.
+
+| in the 2021 crate | rustc | Relax |
+| --- | --- | --- |
+| `mac::by_path!(T)`, `mac::by_ident!(T)` | accepted (the macro's edition) | E0782 |
+| `mac::by_ty!(T)` | E0782 (the caller's edition) | E0782 |
+| `mac::own!()` | accepted | accepted |
+
+With the editions swapped (a 2021 macro used from a 2015 crate) rustc gives E0782 for `by_path`,
+`by_ident` and `own` and accepts `by_ty`; Relax accepts `by_path` and `by_ident`.
+
+Seen in atspi-common 0.13 (`static_assertions::assert_obj_safe!(EventProperties)`, a 2015 crate's
+macro with `$xs:path`).
+
+Relax reads the edition of the token (types/src/tcx.rs, the `DefKind::Trait` arm of a type path:
+`edition_at`), which follows a substituted fragment back to the text it came from. The parser
+knows a path fragment (front/src/parser.rs `path_frags`) while it parses; a parsed file does not
+keep it, and an `ident` fragment is not marked at all (front/src/macros.rs `transcribe`). A type
+path that starts at a `path` or `ident` fragment needs the edition of the `macro_rules!` region
+that holds it (`ParsedFile::expansion_region_kind` reads that region without following the origin).
