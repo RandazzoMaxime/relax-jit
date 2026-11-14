@@ -8,7 +8,8 @@
 //! - Branches (jmp / jcc / call) to a label defined LATER or to a symbol always use the rel32
 //!   form (the assembler is single pass; no relaxation). A backward label within rel8 range
 //!   uses the short form, as LLVM does. `{disp32} jmp` in oracle sources forces LLVM's long form.
-//! - EVEX (xmm16-31, zmm, opmask) is not supported.
+//! - EVEX: the vector moves on zmm and the 128/256-bit part inserts and extracts (evex_insn);
+//!   no opmask, no broadcast, no other instruction on zmm or xmm16-31.
 
 use super::{split_commas, Ctx, Encoder, FixKind, PReg, Tok, Value};
 
@@ -575,6 +576,11 @@ fn put_disp32(ctx: &mut Ctx, v: &Value, kind: Option<FixKind>) -> Result<(), Str
 }
 
 fn put_modrm(ctx: &mut Ctx, reg: u8, rm: &Op, tail: usize) -> Result<(), String> {
+    put_modrm_n(ctx, reg, rm, tail, 1)
+}
+
+/// `n`: the unit of an 8-bit displacement (EVEX disp8*N; 1 elsewhere).
+fn put_modrm_n(ctx: &mut Ctx, reg: u8, rm: &Op, tail: usize, n: i128) -> Result<(), String> {
     let r3 = (reg & 7) << 3;
     match rm {
         Op::R(r) => ctx.emit_u8(0xC0 | r3 | (r.enc() & 7)),
@@ -614,7 +620,7 @@ fn put_modrm(ctx: &mut Ctx, reg: u8, rm: &Op, tail: usize) -> Result<(), String>
                     let b3 = b.n & 7;
                     let (md, d8, d32): (u8, Option<i8>, bool) = match &m.disp {
                         Value::Const(0) if b3 != 5 => (0, None, false),
-                        Value::Const(k) if (-128..128).contains(k) => (1, Some(*k as i8), false),
+                        Value::Const(k) if k % n == 0 && (-128..128).contains(&(k / n)) => (1, Some((k / n) as i8), false),
                         _ => (2, None, true),
                     };
                     if idx.is_some() || b3 == 4 {
@@ -727,6 +733,111 @@ fn gen_vex(ctx: &mut Ctx, pp: u8, map: u8, w: bool, l: bool, op: u8, reg: u8, vv
     put_modrm(ctx, reg, rm, imm.len())?;
     ctx.emit(imm);
     Ok(())
+}
+
+/// EVEX-encoded instruction, no mask and no broadcast. `pp` as gen_vex; `ll`: 0 = 128, 1 = 256,
+/// 2 = 512; `n`: the disp8*N unit of its memory operand (Intel SDM vol. 2, 2.7.5).
+fn gen_evex(ctx: &mut Ctx, pp: u8, map: u8, w: bool, ll: u8, op: u8, reg: u8, vvvv: u8, rm: &Op, imm: &[u8], n: i128) -> Result<(), String> {
+    let (x, b) = match rm {
+        Op::R(r) => ((r.n >> 4) & 1, (r.n >> 3) & 1),
+        _ => rm_xb(rm)?,
+    };
+    let sp = take_pfx(ctx);
+    put_pre(ctx, rm);
+    ctx.emit(&sp);
+    ctx.emit_u8(0x62);
+    ctx.emit_u8(((((reg >> 3) & 1) ^ 1) << 7) | ((x ^ 1) << 6) | ((b ^ 1) << 5) | ((((reg >> 4) & 1) ^ 1) << 4) | map);
+    ctx.emit_u8(((w as u8) << 7) | ((!vvvv & 15) << 3) | 4 | pp);
+    ctx.emit_u8((ll << 5) | ((((vvvv >> 4) & 1) ^ 1) << 3));
+    ctx.emit_u8(op);
+    put_modrm_n(ctx, reg, rm, imm.len(), n)?;
+    ctx.emit(imm);
+    Ok(())
+}
+
+fn evex_ll(bits: u16) -> u8 {
+    match bits {
+        512 => 2,
+        256 => 1,
+        _ => 0,
+    }
+}
+
+/// The instructions that have an EVEX form only, and the vector moves on a zmm register:
+/// (pp, VEX.W, load opcode) of a move, (opcode, W, bytes of the narrow operand) of an
+/// insert / extract of a 128- or 256-bit part.
+fn evex_insn(ctx: &mut Ctx, mn: &str, ops: &[Op]) -> Result<bool, String> {
+    let zmm = ops.iter().any(|o| matches!(o, Op::R(r) if r.vec && r.bits == 512));
+    let mov = match mn {
+        "vmovups" if zmm => Some((0u8, false, 0x10u8)),
+        "vmovaps" if zmm => Some((0, false, 0x28)),
+        "vmovupd" if zmm => Some((1, true, 0x10)),
+        "vmovapd" if zmm => Some((1, true, 0x28)),
+        "vmovdqa32" => Some((1, false, 0x6F)),
+        "vmovdqa64" => Some((1, true, 0x6F)),
+        "vmovdqu32" => Some((2, false, 0x6F)),
+        "vmovdqu64" => Some((2, true, 0x6F)),
+        "vmovdqu8" => Some((3, false, 0x6F)),
+        "vmovdqu16" => Some((3, true, 0x6F)),
+        _ => None,
+    };
+    if let Some((pp, w, load)) = mov {
+        // the store opcode: 0x11 / 0x29 / 0x7F
+        let store = if load == 0x6F { 0x7F } else { load + 1 };
+        return match ops {
+            [Op::R(d), s] if d.vec && is_vecrm(s) => {
+                gen_evex(ctx, pp, 1, w, evex_ll(d.bits), load, d.n, 0, s, &[], d.bits as i128 / 8)?;
+                Ok(true)
+            }
+            [d @ Op::M(_), Op::R(s)] if s.vec => {
+                gen_evex(ctx, pp, 1, w, evex_ll(s.bits), store, s.n, 0, d, &[], s.bits as i128 / 8)?;
+                Ok(true)
+            }
+            _ => Err(bad(mn)),
+        };
+    }
+    let part = |rest: &str| -> Option<(u8, bool, u16)> {
+        Some(match rest {
+            "32x4" => (0, false, 128),
+            "64x2" => (0, true, 128),
+            "32x8" => (2, false, 256),
+            "64x4" => (2, true, 256),
+            _ => return None,
+        })
+    };
+    let (base, rest) = if let Some(r) = mn.strip_prefix("vinsertf") {
+        (0x18u8, r)
+    } else if let Some(r) = mn.strip_prefix("vinserti") {
+        (0x38, r)
+    } else if let Some(r) = mn.strip_prefix("vextractf") {
+        (0x19, r)
+    } else if let Some(r) = mn.strip_prefix("vextracti") {
+        (0x39, r)
+    } else {
+        return Ok(false);
+    };
+    let Some((add, w, narrow)) = part(rest) else { return Ok(false) };
+    let op = base + add;
+    let narrow_ok = |o: &Op| match o {
+        Op::R(r) => r.vec && r.bits == narrow,
+        Op::M(_) => true,
+        Op::I(_) => false,
+    };
+    match ops {
+        // insert: dst, src1, narrow r/m, imm8
+        [Op::R(d), Op::R(s1), s2, Op::I(i)] if base & 1 == 0 && d.vec && s1.vec && d.bits == s1.bits && d.bits > narrow && narrow_ok(s2) => {
+            let imm = imm_le(konst(i)?, 1)?;
+            gen_evex(ctx, 1, 3, w, evex_ll(d.bits), op, d.n, s1.n, s2, &imm, narrow as i128 / 8)?;
+            Ok(true)
+        }
+        // extract: narrow r/m, src, imm8
+        [d, Op::R(s), Op::I(i)] if base & 1 == 1 && s.vec && s.bits > narrow && narrow_ok(d) => {
+            let imm = imm_le(konst(i)?, 1)?;
+            gen_evex(ctx, 1, 3, w, evex_ll(s.bits), op, s.n, 0, d, &imm, narrow as i128 / 8)?;
+            Ok(true)
+        }
+        _ => Err(bad(mn)),
+    }
 }
 
 // ---------------------------------------------------------------- integer instructions
@@ -1394,6 +1505,22 @@ fn int_insn(ctx: &mut Ctx, mn: &str, ops: &[Op]) -> Result<bool, String> {
             }
             _ => return Err(bad(mn)),
         },
+        // the x87 environment and control word (D9 /4../7); the `fn` forms have no FWAIT before
+        "fldenv" | "fldcw" | "fnstenv" | "fnstcw" | "fstenv" | "fstcw" => match ops {
+            [m @ Op::M(_)] => {
+                let n = match mn {
+                    "fldenv" => 4,
+                    "fldcw" => 5,
+                    "fnstenv" | "fstenv" => 6,
+                    _ => 7,
+                };
+                if matches!(mn, "fstenv" | "fstcw") {
+                    ctx.emit_u8(0x9B);
+                }
+                gen(ctx, &f1(0xD9), n, m, &[])?
+            }
+            _ => return Err(bad(mn)),
+        },
         "vstmxcsr" | "vldmxcsr" => match ops {
             [m @ Op::M(_)] => gen_vex(ctx, 0, 1, false, false, 0xAE, if mn == "vstmxcsr" { 3 } else { 2 }, 0, m, &[])?,
             _ => return Err(bad(mn)),
@@ -1705,6 +1832,9 @@ fn sse_insn(ctx: &mut Ctx, mn: &str, ops: &[Op]) -> Result<bool, String> {
 }
 
 fn sse_insn2(ctx: &mut Ctx, mn: &str, nm: &str, vex: bool, ops: &[Op]) -> Result<bool, String> {
+    if vex && evex_insn(ctx, mn, ops)? {
+        return Ok(true);
+    }
     no_zmm(ops)?;
     let l = wide(ops);
     // ---- fused multiply-add (VEX only)
