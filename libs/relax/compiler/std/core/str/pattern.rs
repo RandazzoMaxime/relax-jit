@@ -1160,3 +1160,45 @@ impl<'a, const N: usize> ReverseSearcher<'a> for CharArraySearcher<'a, N> {
 }
 
 impl<'a, const N: usize> DoubleEndedSearcher<'a> for CharArraySearcher<'a, N> {}
+
+// ---------------------------------------------------------------- Debug
+
+struct CharIndicesDebug<'s, 'a>(&'s CharStepper<'a>);
+impl<'s, 'a> crate::fmt::Debug for CharIndicesDebug<'s, 'a> {
+    fn fmt(&self, f: &mut crate::fmt::Formatter<'_>) -> crate::fmt::Result {
+        let rest = &self.0.haystack[self.0.front..self.0.back];
+        f.debug_struct("CharIndices").field("front_offset", &self.0.front).field("iter", &rest.chars()).finish()
+    }
+}
+
+impl<'a, F> crate::fmt::Debug for CharPredicateSearcher<'a, F> {
+    fn fmt(&self, f: &mut crate::fmt::Formatter<'_>) -> crate::fmt::Result {
+        f.debug_struct("CharPredicateSearcher")
+            .field("haystack", &self.steps.haystack)
+            .field("char_indices", &CharIndicesDebug(&self.steps))
+            .finish()
+    }
+}
+
+struct MultiCharEqDebug<'s, 'a>(&'s [char], &'s CharStepper<'a>);
+impl<'s, 'a> crate::fmt::Debug for MultiCharEqDebug<'s, 'a> {
+    fn fmt(&self, f: &mut crate::fmt::Formatter<'_>) -> crate::fmt::Result {
+        f.debug_struct("MultiCharEqSearcher")
+            .field("char_eq", &self.0)
+            .field("haystack", &self.1.haystack)
+            .field("char_indices", &CharIndicesDebug(self.1))
+            .finish()
+    }
+}
+
+impl<'a, 'b> crate::fmt::Debug for CharSliceSearcher<'a, 'b> {
+    fn fmt(&self, f: &mut crate::fmt::Formatter<'_>) -> crate::fmt::Result {
+        f.debug_tuple("CharSliceSearcher").field(&MultiCharEqDebug(self.chars, &self.steps)).finish()
+    }
+}
+
+impl<'a, const N: usize> crate::fmt::Debug for CharArraySearcher<'a, N> {
+    fn fmt(&self, f: &mut crate::fmt::Formatter<'_>) -> crate::fmt::Result {
+        f.debug_tuple("CharArraySearcher").field(&MultiCharEqDebug(&self.chars, &self.steps)).finish()
+    }
+}

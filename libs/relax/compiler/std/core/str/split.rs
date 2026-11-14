@@ -668,3 +668,126 @@ impl<'a> SplitAsciiWhitespace<'a> {
         }
     }
 }
+
+// ---------------------------------------------------------------- Debug
+
+use crate::fmt;
+
+impl<'a, P: Pattern<'a>> fmt::Debug for SplitInternal<'a, P>
+where
+    P::Searcher: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SplitInternal")
+            .field("start", &self.start)
+            .field("end", &self.end)
+            .field("matcher", &self.matcher)
+            .field("allow_trailing_empty", &self.allow_trailing_empty)
+            .field("finished", &self.finished)
+            .finish()
+    }
+}
+
+macro_rules! split_debug {
+    ($($name:ident)*) => {$(
+        impl<'a, P: Pattern<'a>> fmt::Debug for $name<'a, P>
+        where
+            P::Searcher: fmt::Debug,
+        {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_tuple(stringify!($name)).field(&self.0).finish()
+            }
+        }
+    )*};
+}
+split_debug!(Split RSplit SplitTerminator RSplitTerminator);
+
+// core derives this one: a tuple struct's field prints as `0`
+impl<'a, P: Pattern<'a>> fmt::Debug for SplitInclusive<'a, P>
+where
+    P::Searcher: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SplitInclusive").field("0", &self.0).finish()
+    }
+}
+
+struct SplitNInternalDebug<'s, 'a, P: Pattern<'a>>(&'s SplitInternal<'a, P>, usize);
+impl<'s, 'a, P: Pattern<'a>> fmt::Debug for SplitNInternalDebug<'s, 'a, P>
+where
+    P::Searcher: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SplitNInternal").field("iter", self.0).field("count", &self.1).finish()
+    }
+}
+
+macro_rules! splitn_debug {
+    ($($name:ident)*) => {$(
+        impl<'a, P: Pattern<'a>> fmt::Debug for $name<'a, P>
+        where
+            P::Searcher: fmt::Debug,
+        {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_tuple(stringify!($name)).field(&SplitNInternalDebug(&self.iter, self.count)).finish()
+            }
+        }
+    )*};
+}
+splitn_debug!(SplitN RSplitN);
+
+struct InternalDebug<'s, S>(&'static str, &'s S);
+impl<'s, S: fmt::Debug> fmt::Debug for InternalDebug<'s, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple(self.0).field(self.1).finish()
+    }
+}
+
+macro_rules! matches_debug {
+    ($($name:ident $internal:literal)*) => {$(
+        impl<'a, P: Pattern<'a>> fmt::Debug for $name<'a, P>
+        where
+            P::Searcher: fmt::Debug,
+        {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_tuple(stringify!($name)).field(&InternalDebug($internal, &self.0)).finish()
+            }
+        }
+    )*};
+}
+matches_debug!(Matches "MatchesInternal" RMatches "MatchesInternal" MatchIndices "MatchIndicesInternal" RMatchIndices "MatchIndicesInternal");
+
+struct IterDebug<'s, I>(&'static str, &'s I);
+impl<'s, I: fmt::Debug> fmt::Debug for IterDebug<'s, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(self.0).field("iter", self.1).finish()
+    }
+}
+
+impl<'a> fmt::Debug for Lines<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Lines").field(&IterDebug("Map", &self.0)).finish()
+    }
+}
+
+impl<'a> fmt::Debug for SplitWhitespace<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SplitWhitespace").field("inner", &IterDebug("Filter", &self.inner)).finish()
+    }
+}
+
+struct ByteSplitDebug<'s>(&'s [u8], bool);
+impl<'s> fmt::Debug for ByteSplitDebug<'s> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Split").field("v", &self.0).field("finished", &self.1).finish()
+    }
+}
+
+impl<'a> fmt::Debug for SplitAsciiWhitespace<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let rest = &self.s.as_bytes()[self.front.min(self.back)..self.back];
+        let split = ByteSplitDebug(rest, false);
+        let filter = IterDebug("Filter", &split);
+        f.debug_struct("SplitAsciiWhitespace").field("inner", &IterDebug("Map", &filter)).finish()
+    }
+}
