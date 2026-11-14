@@ -844,6 +844,11 @@ pub fn _mm256_fnmsub_ps(a: __m256, b: __m256, c: __m256) -> __m256 {
 pub unsafe fn _mm256_loadu_ps(mem_addr: *const f32) -> __m256 {
     ps_join(vx::vx_load(mem_addr as *const u8), vx::vx_load((mem_addr as *const u8).add(16)))
 }
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_loadu2_m128(hiaddr: *const f32, loaddr: *const f32) -> __m256 {
+    ps_join(vx::vx_load(loaddr as *const u8), vx::vx_load(hiaddr as *const u8))
+}
 /// 32-byte alignment is the caller's contract (as on hardware); the loads are the same.
 #[inline]
 #[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
@@ -6077,4 +6082,2519 @@ pub fn _mm_cmpestrm<const IMM8: i32>(a: __m128i, la: i32, b: __m128i, lb: i32) -
         i += 1;
     }
     unsafe { from128_u8(r) }
+}
+
+// ---- SSE/SSE3/SSE4.1/FMA/AVX 128-bit float intrinsics (scalar `_ss` forms, compares, conversions, loads/stores, fences) ----
+#[inline(always)]
+unsafe fn a1_low(a: __m128, r: __m128) -> __m128 {
+    __m128([r.0[0], a.0[1], a.0[2], a.0[3]])
+}
+#[inline(always)]
+unsafe fn a1_gather_f32(slice: *const f32, off: i64, scale: i32) -> f32 {
+    crate::ptr::read_unaligned((slice as *const u8).offset((off * scale as i64) as isize) as *const f32)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_sub_ss(a: __m128, b: __m128) -> __m128 {
+    __m128([a.0[0] - b.0[0], a.0[1], a.0[2], a.0[3]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_mul_ss(a: __m128, b: __m128) -> __m128 {
+    __m128([a.0[0] * b.0[0], a.0[1], a.0[2], a.0[3]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_div_ss(a: __m128, b: __m128) -> __m128 {
+    __m128([a.0[0] / b.0[0], a.0[1], a.0[2], a.0[3]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_min_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_min_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_max_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_max_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_sqrt_ss(a: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_sqrt_ps(a))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_rcp_ss(a: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_rcp_ps(a))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_rsqrt_ss(a: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_rsqrt_ps(a))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_move_ss(a: __m128, b: __m128) -> __m128 {
+    __m128([b.0[0], a.0[1], a.0[2], a.0[3]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_movelh_ps(a: __m128, b: __m128) -> __m128 {
+    __m128([a.0[0], a.0[1], b.0[0], b.0[1]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse3"))]
+pub fn _mm_moveldup_ps(a: __m128) -> __m128 {
+    __m128([a.0[0], a.0[0], a.0[2], a.0[2]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpnlt_ps(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        _mm_xor_ps(_mm_cmplt_ps(a, b), ps_ones())
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpnle_ps(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        _mm_xor_ps(_mm_cmple_ps(a, b), ps_ones())
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpngt_ps(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        _mm_xor_ps(_mm_cmpgt_ps(a, b), ps_ones())
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpnge_ps(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        _mm_xor_ps(_mm_cmpge_ps(a, b), ps_ones())
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpeq_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmpeq_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmplt_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmplt_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmple_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmple_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpgt_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmpgt_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpge_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmpge_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpneq_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmpneq_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpnlt_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmpnlt_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpnle_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmpnle_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpngt_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmpngt_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpnge_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmpnge_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpord_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmpord_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cmpunord_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmpunord_ps(a, b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_cmp_ss<const IMM5: i32>(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_cmp_ps::<IMM5>(a, b))
+    }
+}
+// comiss / ucomiss: eq, lt, le, gt, ge are 0 for unordered operands, neq is 1
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_comieq_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] == b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_comilt_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] < b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_comile_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] <= b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_comigt_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] > b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_comige_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] >= b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_comineq_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] != b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_ucomieq_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] == b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_ucomilt_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] < b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_ucomile_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] <= b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_ucomigt_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] > b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_ucomige_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] >= b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_ucomineq_ss(a: __m128, b: __m128) -> i32 {
+    (a.0[0] != b.0[0]) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cvt_ss2si(a: __m128) -> i32 {
+    unsafe {
+        f32_to_i32(a.0[0], mxcsr_rm())
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cvtt_ss2si(a: __m128) -> i32 {
+    f32_to_i32(a.0[0], 3)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cvtsi32_ss(a: __m128, b: i32) -> __m128 {
+    __m128([b as f32, a.0[1], a.0[2], a.0[3]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse3"))]
+pub fn _mm_addsub_ps(a: __m128, b: __m128) -> __m128 {
+    __m128([a.0[0] - b.0[0], a.0[1] + b.0[1], a.0[2] - b.0[2], a.0[3] + b.0[3]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse3"))]
+pub fn _mm_hadd_ps(a: __m128, b: __m128) -> __m128 {
+    __m128([a.0[0] + a.0[1], a.0[2] + a.0[3], b.0[0] + b.0[1], b.0[2] + b.0[3]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse3"))]
+pub fn _mm_hsub_ps(a: __m128, b: __m128) -> __m128 {
+    __m128([a.0[0] - a.0[1], a.0[2] - a.0[3], b.0[0] - b.0[1], b.0[2] - b.0[3]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_blend_ps<const IMM4: i32>(a: __m128, b: __m128) -> __m128 {
+    let l = |i: usize| if (IMM4 >> i) & 1 != 0 { b.0[i] } else { a.0[i] };
+    __m128([l(0), l(1), l(2), l(3)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_round_ss<const ROUNDING: i32>(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_round_ps::<ROUNDING>(b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_floor_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_floor_ps(b))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_ceil_ss(a: __m128, b: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, _mm_ceil_ps(b))
+    }
+}
+// dpps: products of the lanes selected by IMM8[7:4], summed (p0+p1)+(p2+p3), into the lanes of IMM8[3:0]
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_dp_ps<const IMM8: i32>(a: __m128, b: __m128) -> __m128 {
+    let p = |i: usize| if (IMM8 >> (4 + i)) & 1 != 0 { a.0[i] * b.0[i] } else { 0.0 };
+    let s = (p(0) + p(1)) + (p(2) + p(3));
+    let l = |i: usize| if (IMM8 >> i) & 1 != 0 { s } else { 0.0 };
+    __m128([l(0), l(1), l(2), l(3)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm_extract_ps<const IMM8: i32>(a: __m128) -> i32 {
+    a.0[(IMM8 & 3) as usize].to_bits() as i32
+}
+// insertps: b lane IMM8[7:6] into a lane IMM8[5:4], then the lanes of IMM8[3:0] zeroed
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_insert_ps<const IMM8: i32>(a: __m128, b: __m128) -> __m128 {
+    let mut r = a.0;
+    r[((IMM8 >> 4) & 3) as usize] = b.0[((IMM8 >> 6) & 3) as usize];
+    let mut i = 0;
+    while i < 4 {
+        if (IMM8 >> i) & 1 != 0 {
+            r[i] = 0.0;
+        }
+        i += 1;
+    }
+    __m128(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "fma"))]
+pub fn _mm_fmadd_ss(a: __m128, b: __m128, c: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, fma_ps(a, b, c, false, false))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "fma"))]
+pub fn _mm_fmsub_ss(a: __m128, b: __m128, c: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, fma_ps(a, b, c, false, true))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "fma"))]
+pub fn _mm_fnmadd_ss(a: __m128, b: __m128, c: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, fma_ps(a, b, c, true, false))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "fma"))]
+pub fn _mm_fnmsub_ss(a: __m128, b: __m128, c: __m128) -> __m128 {
+    unsafe {
+        a1_low(a, fma_ps(a, b, c, true, true))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "fma"))]
+pub fn _mm_fmaddsub_ps(a: __m128, b: __m128, c: __m128) -> __m128 {
+    unsafe {
+        let (s, t) = (fma_ps(a, b, c, false, true), fma_ps(a, b, c, false, false));
+        __m128([s.0[0], t.0[1], s.0[2], t.0[3]])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "fma"))]
+pub fn _mm_fmsubadd_ps(a: __m128, b: __m128, c: __m128) -> __m128 {
+    unsafe {
+        let (s, t) = (fma_ps(a, b, c, false, true), fma_ps(a, b, c, false, false));
+        __m128([t.0[0], s.0[1], t.0[2], s.0[3]])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm_broadcast_ss(f: &f32) -> __m128 {
+    __m128([*f; 4])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm_broadcastss_ps(a: __m128) -> __m128 {
+    __m128([a.0[0]; 4])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm_permute_ps<const IMM8: i32>(a: __m128) -> __m128 {
+    let l = |i: usize| a.0[((IMM8 >> (2 * i)) & 3) as usize];
+    __m128([l(0), l(1), l(2), l(3)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm_permutevar_ps(a: __m128, b: __m128i) -> __m128 {
+    unsafe {
+        let k = lanes128_i32(b);
+        __m128([a.0[(k[0] & 3) as usize], a.0[(k[1] & 3) as usize], a.0[(k[2] & 3) as usize], a.0[(k[3] & 3) as usize]])
+    }
+}
+// vtestps on the sign bits: ZF = (a & b) signs all clear, CF = (!a & b) signs all clear
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm_testz_ps(a: __m128, b: __m128) -> i32 {
+    unsafe {
+        (_mm_movemask_ps(_mm_and_ps(a, b)) == 0) as i32
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm_testc_ps(a: __m128, b: __m128) -> i32 {
+    unsafe {
+        (_mm_movemask_ps(_mm_andnot_ps(a, b)) == 0) as i32
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm_testnzc_ps(a: __m128, b: __m128) -> i32 {
+    unsafe {
+        (_mm_movemask_ps(_mm_and_ps(a, b)) != 0 && _mm_movemask_ps(_mm_andnot_ps(a, b)) != 0) as i32
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm_maskload_ps(mem_addr: *const f32, mask: __m128i) -> __m128 {
+    let m = lanes128_i32(mask);
+    let l = |i: usize| if m[i] < 0 { crate::ptr::read_unaligned(mem_addr.add(i)) } else { 0.0 };
+    __m128([l(0), l(1), l(2), l(3)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm_maskstore_ps(mem_addr: *mut f32, mask: __m128i, a: __m128) {
+    let m = lanes128_i32(mask);
+    let mut i = 0;
+    while i < 4 {
+        if m[i] < 0 {
+            crate::ptr::write_unaligned(mem_addr.add(i), a.0[i]);
+        }
+        i += 1;
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm_i32gather_ps<const SCALE: i32>(slice: *const f32, offsets: __m128i) -> __m128 {
+    let o = lanes128_i32(offsets);
+    let l = |i: usize| a1_gather_f32(slice, o[i] as i64, SCALE);
+    __m128([l(0), l(1), l(2), l(3)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm_mask_i32gather_ps<const SCALE: i32>(src: __m128, slice: *const f32, offsets: __m128i, mask: __m128) -> __m128 {
+    let o = lanes128_i32(offsets);
+    let l = |i: usize| if mask.0[i].is_sign_negative() { a1_gather_f32(slice, o[i] as i64, SCALE) } else { src.0[i] };
+    __m128([l(0), l(1), l(2), l(3)])
+}
+// two 64-bit offsets: the upper two lanes of the result are zero
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm_i64gather_ps<const SCALE: i32>(slice: *const f32, offsets: __m128i) -> __m128 {
+    __m128([a1_gather_f32(slice, offsets.0[0], SCALE), a1_gather_f32(slice, offsets.0[1], SCALE), 0.0, 0.0])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm_mask_i64gather_ps<const SCALE: i32>(src: __m128, slice: *const f32, offsets: __m128i, mask: __m128) -> __m128 {
+    let l = |i: usize| if mask.0[i].is_sign_negative() { a1_gather_f32(slice, offsets.0[i], SCALE) } else { src.0[i] };
+    __m128([l(0), l(1), 0.0, 0.0])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub unsafe fn _mm_load_ss(p: *const f32) -> __m128 {
+    __m128([crate::ptr::read_unaligned(p), 0.0, 0.0, 0.0])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub unsafe fn _mm_load1_ps(p: *const f32) -> __m128 {
+    __m128([crate::ptr::read_unaligned(p); 4])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub unsafe fn _mm_load_ps1(p: *const f32) -> __m128 {
+    _mm_load1_ps(p)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub unsafe fn _mm_loadr_ps(p: *const f32) -> __m128 {
+    let a = _mm_load_ps(p);
+    __m128([a.0[3], a.0[2], a.0[1], a.0[0]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub unsafe fn _mm_store_ss(p: *mut f32, a: __m128) {
+    crate::ptr::write_unaligned(p, a.0[0])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub unsafe fn _mm_store1_ps(p: *mut f32, a: __m128) {
+    _mm_store_ps(p, __m128([a.0[0]; 4]))
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub unsafe fn _mm_store_ps1(p: *mut f32, a: __m128) {
+    _mm_store1_ps(p, a)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub unsafe fn _mm_storer_ps(p: *mut f32, a: __m128) {
+    _mm_store_ps(p, __m128([a.0[3], a.0[2], a.0[1], a.0[0]]))
+}
+/// a non-temporal hint on hardware; the same store here
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub unsafe fn _mm_stream_ps(mem_addr: *mut f32, a: __m128) {
+    _mm_store_ps(mem_addr, a)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_sfence() {
+    crate::sync::atomic::fence(crate::sync::atomic::Ordering::SeqCst)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub fn _mm_lfence() {
+    crate::sync::atomic::fence(crate::sync::atomic::Ordering::SeqCst)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub fn _mm_mfence() {
+    crate::sync::atomic::fence(crate::sync::atomic::Ordering::SeqCst)
+}
+#[inline]
+pub fn _mm_pause() {
+    crate::hint::spin_loop()
+}
+/// a cache-line flush on hardware; no architectural effect, nothing to do here
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub unsafe fn _mm_clflush(_p: *const u8) {}
+
+// ---- SSE2/SSSE3/SSE4.1/SSE4.2/AVX2 128-bit integer intrinsics ----
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_blend_epi32<const IMM4: i32>(a: __m128i, b: __m128i) -> __m128i {
+    unsafe {
+        const { assert!(IMM4 >= 0 && IMM4 < 16) };
+        let a = lanes128_i32(a);
+        let b = lanes128_i32(b);
+        let l = |i: usize| if (IMM4 >> i) & 1 != 0 { b[i] } else { a[i] };
+        from128_i32([l(0), l(1), l(2), l(3)])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm_broadcastb_epi8(a: __m128i) -> __m128i {
+    unsafe { from128_u8([lanes128_u8(a)[0]; 16]) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm_broadcastw_epi16(a: __m128i) -> __m128i {
+    unsafe { from128_u16([lanes128_u16(a)[0]; 8]) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm_broadcastd_epi32(a: __m128i) -> __m128i {
+    unsafe { from128_u32([lanes128_u32(a)[0]; 4]) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm_broadcastq_epi64(a: __m128i) -> __m128i {
+    __m128i([a.0[0], a.0[0]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm_bslli_si128<const IMM8: i32>(a: __m128i) -> __m128i {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    _mm_slli_si128::<IMM8>(a)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm_bsrli_si128<const IMM8: i32>(a: __m128i) -> __m128i {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    _mm_srli_si128::<IMM8>(a)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+pub fn _mm_cmpgt_epi64(a: __m128i, b: __m128i) -> __m128i {
+    __m128i([-((a.0[0] > b.0[0]) as i64), -((a.0[1] > b.0[1]) as i64)])
+}
+
+// PCMPISTR* length: the index of the first null element, or the element count
+unsafe fn a2_pcmpstr_len(a: __m128i, imm8: i32) -> i32 {
+    let mut i = 0;
+    if imm8 & 1 != 0 {
+        let x = lanes128_u16(a);
+        while i < 8 && x[i] != 0 {
+            i += 1;
+        }
+    } else {
+        let x = lanes128_u8(a);
+        while i < 16 && x[i] != 0 {
+            i += 1;
+        }
+    }
+    i as i32
+}
+// IntRes2, the element count, and the flags CF (IntRes2 != 0), ZF (b ends), SF (a ends), OF (IntRes2 bit 0)
+unsafe fn a2_pcmpstr(a: __m128i, la: i32, b: __m128i, lb: i32, imm8: i32) -> (u32, usize, bool, bool, bool, bool) {
+    let (res, n) = sidd_cmpestr(a, la, b, lb, imm8);
+    (res, n, res != 0, (lb.unsigned_abs() as usize) < n, (la.unsigned_abs() as usize) < n, res & 1 != 0)
+}
+unsafe fn a2_pcmpistr(a: __m128i, b: __m128i, imm8: i32) -> (u32, usize, bool, bool, bool, bool) {
+    a2_pcmpstr(a, a2_pcmpstr_len(a, imm8), b, a2_pcmpstr_len(b, imm8), imm8)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(4)]
+pub fn _mm_cmpestra<const IMM8: i32>(a: __m128i, la: i32, b: __m128i, lb: i32) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    let (_, _, cf, zf, _, _) = unsafe { a2_pcmpstr(a, la, b, lb, IMM8) };
+    (!cf && !zf) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(4)]
+pub fn _mm_cmpestrc<const IMM8: i32>(a: __m128i, la: i32, b: __m128i, lb: i32) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    let (_, _, cf, _, _, _) = unsafe { a2_pcmpstr(a, la, b, lb, IMM8) };
+    cf as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(4)]
+pub fn _mm_cmpestro<const IMM8: i32>(a: __m128i, la: i32, b: __m128i, lb: i32) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    let (_, _, _, _, _, of) = unsafe { a2_pcmpstr(a, la, b, lb, IMM8) };
+    of as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(4)]
+pub fn _mm_cmpestrs<const IMM8: i32>(a: __m128i, la: i32, b: __m128i, lb: i32) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    let (_, _, _, _, sf, _) = unsafe { a2_pcmpstr(a, la, b, lb, IMM8) };
+    sf as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(4)]
+pub fn _mm_cmpestrz<const IMM8: i32>(a: __m128i, la: i32, b: __m128i, lb: i32) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    let (_, _, _, zf, _, _) = unsafe { a2_pcmpstr(a, la, b, lb, IMM8) };
+    zf as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_cmpistra<const IMM8: i32>(a: __m128i, b: __m128i) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    let (_, _, cf, zf, _, _) = unsafe { a2_pcmpistr(a, b, IMM8) };
+    (!cf && !zf) as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_cmpistrc<const IMM8: i32>(a: __m128i, b: __m128i) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    let (_, _, cf, _, _, _) = unsafe { a2_pcmpistr(a, b, IMM8) };
+    cf as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_cmpistro<const IMM8: i32>(a: __m128i, b: __m128i) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    let (_, _, _, _, _, of) = unsafe { a2_pcmpistr(a, b, IMM8) };
+    of as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_cmpistrs<const IMM8: i32>(a: __m128i, b: __m128i) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    let (_, _, _, _, sf, _) = unsafe { a2_pcmpistr(a, b, IMM8) };
+    sf as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_cmpistrz<const IMM8: i32>(a: __m128i, b: __m128i) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    let (_, _, _, zf, _, _) = unsafe { a2_pcmpistr(a, b, IMM8) };
+    zf as i32
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_cmpistri<const IMM8: i32>(a: __m128i, b: __m128i) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    unsafe { _mm_cmpestri::<IMM8>(a, a2_pcmpstr_len(a, IMM8), b, a2_pcmpstr_len(b, IMM8)) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_cmpistrm<const IMM8: i32>(a: __m128i, b: __m128i) -> __m128i {
+    const { assert!(IMM8 >= 0 && IMM8 < 256) };
+    unsafe { _mm_cmpestrm::<IMM8>(a, a2_pcmpstr_len(a, IMM8), b, a2_pcmpstr_len(b, IMM8)) }
+}
+
+// CVTSI2SS: an i32 rounded to f32 by the MXCSR rounding mode
+unsafe fn a2_i32_to_f32(b: i32) -> f32 {
+    let f = b as f32;
+    let (x, y) = (f as f64, b as f64);
+    let rm = mxcsr_rm();
+    let down = if y < 0.0 { f32::from_bits(f.to_bits() + 1) } else { f32::from_bits(f.to_bits() - 1) };
+    let up = if y < 0.0 { f32::from_bits(f.to_bits() - 1) } else { f32::from_bits(f.to_bits() + 1) };
+    if x > y && (rm == 1 || (rm == 3 && y > 0.0)) {
+        down
+    } else if x < y && (rm == 2 || (rm == 3 && y < 0.0)) {
+        up
+    } else {
+        f
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cvt_si2ss(a: __m128, b: i32) -> __m128 {
+    unsafe { __m128([a2_i32_to_f32(b), a.0[1], a.0[2], a.0[3]]) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cvtss_si32(a: __m128) -> i32 {
+    unsafe { f32_to_i32(a.0[0], mxcsr_rm()) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+pub fn _mm_cvttss_si32(a: __m128) -> i32 {
+    f32_to_i32(a.0[0], 3)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepi8_epi16(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i8(a);
+        let mut r = [0i16; 8];
+        let mut i = 0;
+        while i < 8 {
+            r[i] = a[i] as i16;
+            i += 1;
+        }
+        from128_i16(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepi8_epi32(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i8(a);
+        from128_i32([a[0] as i32, a[1] as i32, a[2] as i32, a[3] as i32])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepi8_epi64(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i8(a);
+        __m128i([a[0] as i64, a[1] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepi16_epi32(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i16(a);
+        from128_i32([a[0] as i32, a[1] as i32, a[2] as i32, a[3] as i32])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepi16_epi64(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i16(a);
+        __m128i([a[0] as i64, a[1] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepi32_epi64(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i32(a);
+        __m128i([a[0] as i64, a[1] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepu8_epi32(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_u8(a);
+        from128_i32([a[0] as i32, a[1] as i32, a[2] as i32, a[3] as i32])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepu8_epi64(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_u8(a);
+        __m128i([a[0] as i64, a[1] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepu16_epi32(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_u16(a);
+        from128_i32([a[0] as i32, a[1] as i32, a[2] as i32, a[3] as i32])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepu16_epi64(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_u16(a);
+        __m128i([a[0] as i64, a[1] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_cvtepu32_epi64(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_u32(a);
+        __m128i([a[0] as i64, a[1] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm_extract_epi8<const IMM8: i32>(a: __m128i) -> i32 {
+    const { assert!(IMM8 >= 0 && IMM8 < 16) };
+    unsafe { lanes128_u8(a)[IMM8 as usize] as i32 }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_insert_epi8<const IMM8: i32>(a: __m128i, i: i32) -> __m128i {
+    const { assert!(IMM8 >= 0 && IMM8 < 16) };
+    unsafe {
+        let mut r = lanes128_u8(a);
+        r[IMM8 as usize] = i as u8;
+        from128_u8(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_insert_epi16<const IMM8: i32>(a: __m128i, i: i32) -> __m128i {
+    const { assert!(IMM8 >= 0 && IMM8 < 8) };
+    unsafe {
+        let mut r = lanes128_u16(a);
+        r[IMM8 as usize] = i as u16;
+        from128_u16(r)
+    }
+}
+// PHADD* / PHSUB*: adjacent pairs of a fill the low half, those of b the high half
+unsafe fn a2_hpair_i16(a: __m128i, b: __m128i, f: fn(i16, i16) -> i16) -> __m128i {
+    let a = lanes128_i16(a);
+    let b = lanes128_i16(b);
+    from128_i16([
+        f(a[0], a[1]), f(a[2], a[3]), f(a[4], a[5]), f(a[6], a[7]),
+        f(b[0], b[1]), f(b[2], b[3]), f(b[4], b[5]), f(b[6], b[7]),
+    ])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "ssse3"))]
+pub fn _mm_hadd_epi16(a: __m128i, b: __m128i) -> __m128i {
+    unsafe { a2_hpair_i16(a, b, i16::wrapping_add) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "ssse3"))]
+pub fn _mm_hadds_epi16(a: __m128i, b: __m128i) -> __m128i {
+    unsafe { a2_hpair_i16(a, b, i16::saturating_add) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "ssse3"))]
+pub fn _mm_hsub_epi16(a: __m128i, b: __m128i) -> __m128i {
+    unsafe { a2_hpair_i16(a, b, i16::wrapping_sub) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "ssse3"))]
+pub fn _mm_hsubs_epi16(a: __m128i, b: __m128i) -> __m128i {
+    unsafe { a2_hpair_i16(a, b, i16::saturating_sub) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "ssse3"))]
+pub fn _mm_hadd_epi32(a: __m128i, b: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i32(a);
+        let b = lanes128_i32(b);
+        from128_i32([a[0].wrapping_add(a[1]), a[2].wrapping_add(a[3]), b[0].wrapping_add(b[1]), b[2].wrapping_add(b[3])])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "ssse3"))]
+pub fn _mm_hsub_epi32(a: __m128i, b: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i32(a);
+        let b = lanes128_i32(b);
+        from128_i32([a[0].wrapping_sub(a[1]), a[2].wrapping_sub(a[3]), b[0].wrapping_sub(b[1]), b[2].wrapping_sub(b[3])])
+    }
+}
+
+unsafe fn a2_gather_i32(slice: *const i32, off: i64, scale: i32) -> i32 {
+    crate::ptr::read_unaligned((slice as *const u8).offset((off * scale as i64) as isize) as *const i32)
+}
+unsafe fn a2_gather_i64(slice: *const i64, off: i64, scale: i32) -> i64 {
+    crate::ptr::read_unaligned((slice as *const u8).offset((off * scale as i64) as isize) as *const i64)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm_i32gather_epi32<const SCALE: i32>(slice: *const i32, offsets: __m128i) -> __m128i {
+    const { assert!(SCALE == 1 || SCALE == 2 || SCALE == 4 || SCALE == 8) };
+    let o = lanes128_i32(offsets);
+    let l = |i: usize| a2_gather_i32(slice, o[i] as i64, SCALE);
+    from128_i32([l(0), l(1), l(2), l(3)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm_mask_i32gather_epi32<const SCALE: i32>(src: __m128i, slice: *const i32, offsets: __m128i, mask: __m128i) -> __m128i {
+    const { assert!(SCALE == 1 || SCALE == 2 || SCALE == 4 || SCALE == 8) };
+    let o = lanes128_i32(offsets);
+    let m = lanes128_i32(mask);
+    let s = lanes128_i32(src);
+    let l = |i: usize| if m[i] < 0 { a2_gather_i32(slice, o[i] as i64, SCALE) } else { s[i] };
+    from128_i32([l(0), l(1), l(2), l(3)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm_i32gather_epi64<const SCALE: i32>(slice: *const i64, offsets: __m128i) -> __m128i {
+    const { assert!(SCALE == 1 || SCALE == 2 || SCALE == 4 || SCALE == 8) };
+    let o = lanes128_i32(offsets);
+    __m128i([a2_gather_i64(slice, o[0] as i64, SCALE), a2_gather_i64(slice, o[1] as i64, SCALE)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm_mask_i32gather_epi64<const SCALE: i32>(src: __m128i, slice: *const i64, offsets: __m128i, mask: __m128i) -> __m128i {
+    const { assert!(SCALE == 1 || SCALE == 2 || SCALE == 4 || SCALE == 8) };
+    let o = lanes128_i32(offsets);
+    let l = |i: usize| if mask.0[i] < 0 { a2_gather_i64(slice, o[i] as i64, SCALE) } else { src.0[i] };
+    __m128i([l(0), l(1)])
+}
+// VPGATHERQD: two lanes are gathered, the upper half of the result is zero
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm_i64gather_epi32<const SCALE: i32>(slice: *const i32, offsets: __m128i) -> __m128i {
+    const { assert!(SCALE == 1 || SCALE == 2 || SCALE == 4 || SCALE == 8) };
+    from128_i32([a2_gather_i32(slice, offsets.0[0], SCALE), a2_gather_i32(slice, offsets.0[1], SCALE), 0, 0])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm_mask_i64gather_epi32<const SCALE: i32>(src: __m128i, slice: *const i32, offsets: __m128i, mask: __m128i) -> __m128i {
+    const { assert!(SCALE == 1 || SCALE == 2 || SCALE == 4 || SCALE == 8) };
+    let m = lanes128_i32(mask);
+    let s = lanes128_i32(src);
+    let l = |i: usize| if m[i] < 0 { a2_gather_i32(slice, offsets.0[i], SCALE) } else { s[i] };
+    from128_i32([l(0), l(1), 0, 0])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm_i64gather_epi64<const SCALE: i32>(slice: *const i64, offsets: __m128i) -> __m128i {
+    const { assert!(SCALE == 1 || SCALE == 2 || SCALE == 4 || SCALE == 8) };
+    __m128i([a2_gather_i64(slice, offsets.0[0], SCALE), a2_gather_i64(slice, offsets.0[1], SCALE)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm_mask_i64gather_epi64<const SCALE: i32>(src: __m128i, slice: *const i64, offsets: __m128i, mask: __m128i) -> __m128i {
+    const { assert!(SCALE == 1 || SCALE == 2 || SCALE == 4 || SCALE == 8) };
+    let l = |i: usize| if mask.0[i] < 0 { a2_gather_i64(slice, offsets.0[i], SCALE) } else { src.0[i] };
+    __m128i([l(0), l(1)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub unsafe fn _mm_loadu_si64(mem_addr: *const u8) -> __m128i {
+    __m128i([crate::ptr::read_unaligned(mem_addr as *const i64), 0])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub unsafe fn _mm_maskload_epi32(mem_addr: *const i32, mask: __m128i) -> __m128i {
+    let m = lanes128_i32(mask);
+    let l = |i: usize| if m[i] < 0 { crate::ptr::read_unaligned(mem_addr.add(i)) } else { 0 };
+    from128_i32([l(0), l(1), l(2), l(3)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub unsafe fn _mm_maskload_epi64(mem_addr: *const i64, mask: __m128i) -> __m128i {
+    let l = |i: usize| if mask.0[i] < 0 { crate::ptr::read_unaligned(mem_addr.add(i)) } else { 0 };
+    __m128i([l(0), l(1)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub unsafe fn _mm_maskstore_epi32(mem_addr: *mut i32, mask: __m128i, a: __m128i) {
+    let m = lanes128_i32(mask);
+    let a = lanes128_i32(a);
+    let mut i = 0;
+    while i < 4 {
+        if m[i] < 0 {
+            crate::ptr::write_unaligned(mem_addr.add(i), a[i]);
+        }
+        i += 1;
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub unsafe fn _mm_maskstore_epi64(mem_addr: *mut i64, mask: __m128i, a: __m128i) {
+    let mut i = 0;
+    while i < 2 {
+        if mask.0[i] < 0 {
+            crate::ptr::write_unaligned(mem_addr.add(i), a.0[i]);
+        }
+        i += 1;
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub unsafe fn _mm_maskmoveu_si128(a: __m128i, mask: __m128i, mem_addr: *mut i8) {
+    let m = lanes128_i8(mask);
+    let a = lanes128_i8(a);
+    let mut i = 0;
+    while i < 16 {
+        if m[i] < 0 {
+            crate::ptr::write_unaligned(mem_addr.add(i), a[i]);
+        }
+        i += 1;
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_minpos_epu16(a: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_u16(a);
+        let mut k = 0;
+        let mut i = 1;
+        while i < 8 {
+            if a[i] < a[k] {
+                k = i;
+            }
+            i += 1;
+        }
+        from128_u16([a[k], k as u16, 0, 0, 0, 0, 0, 0])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm_mpsadbw_epu8<const IMM8: i32>(a: __m128i, b: __m128i) -> __m128i {
+    const { assert!(IMM8 >= 0 && IMM8 < 8) };
+    unsafe {
+        let a = lanes128_u8(a);
+        let b = lanes128_u8(b);
+        let ao = ((IMM8 >> 2) & 1) as usize * 4;
+        let bo = (IMM8 & 3) as usize * 4;
+        let mut r = [0u16; 8];
+        let mut i = 0;
+        while i < 8 {
+            let mut k = 0;
+            while k < 4 {
+                r[i] += a[ao + i + k].abs_diff(b[bo + k]) as u16;
+                k += 1;
+            }
+            i += 1;
+        }
+        from128_u16(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_mul_epi32(a: __m128i, b: __m128i) -> __m128i {
+    __m128i([(a.0[0] as i32 as i64) * (b.0[0] as i32 as i64), (a.0[1] as i32 as i64) * (b.0[1] as i32 as i64)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub fn _mm_mulhi_epi16(a: __m128i, b: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i16(a);
+        let b = lanes128_i16(b);
+        let mut r = [0i16; 8];
+        let mut i = 0;
+        while i < 8 {
+            r[i] = ((a[i] as i32 * b[i] as i32) >> 16) as i16;
+            i += 1;
+        }
+        from128_i16(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "ssse3"))]
+pub fn _mm_mulhrs_epi16(a: __m128i, b: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i16(a);
+        let b = lanes128_i16(b);
+        let mut r = [0i16; 8];
+        let mut i = 0;
+        while i < 8 {
+            r[i] = ((((a[i] as i32 * b[i] as i32) >> 14) + 1) >> 1) as i16;
+            i += 1;
+        }
+        from128_i16(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub fn _mm_setr_epi16(e7: i16, e6: i16, e5: i16, e4: i16, e3: i16, e2: i16, e1: i16, e0: i16) -> __m128i {
+    unsafe { from128_i16([e7, e6, e5, e4, e3, e2, e1, e0]) }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "ssse3"))]
+pub fn _mm_sign_epi8(a: __m128i, b: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i8(a);
+        let b = lanes128_i8(b);
+        let mut r = [0i8; 16];
+        let mut i = 0;
+        while i < 16 {
+            r[i] = if b[i] < 0 { a[i].wrapping_neg() } else if b[i] == 0 { 0 } else { a[i] };
+            i += 1;
+        }
+        from128_i8(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "ssse3"))]
+pub fn _mm_sign_epi16(a: __m128i, b: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i16(a);
+        let b = lanes128_i16(b);
+        let mut r = [0i16; 8];
+        let mut i = 0;
+        while i < 8 {
+            r[i] = if b[i] < 0 { a[i].wrapping_neg() } else if b[i] == 0 { 0 } else { a[i] };
+            i += 1;
+        }
+        from128_i16(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "ssse3"))]
+pub fn _mm_sign_epi32(a: __m128i, b: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i32(a);
+        let b = lanes128_i32(b);
+        let mut r = [0i32; 4];
+        let mut i = 0;
+        while i < 4 {
+            r[i] = if b[i] < 0 { a[i].wrapping_neg() } else if b[i] == 0 { 0 } else { a[i] };
+            i += 1;
+        }
+        from128_i32(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub fn _mm_sll_epi16(a: __m128i, count: __m128i) -> __m128i {
+    unsafe {
+        let c = count.0[0] as u64;
+        if c > 15 {
+            return _mm_setzero_si128();
+        }
+        let a = lanes128_u16(a);
+        let s = c as u32;
+        from128_u16([a[0] << s, a[1] << s, a[2] << s, a[3] << s, a[4] << s, a[5] << s, a[6] << s, a[7] << s])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub fn _mm_sll_epi64(a: __m128i, count: __m128i) -> __m128i {
+    let c = count.0[0] as u64;
+    if c > 63 {
+        return __m128i([0, 0]);
+    }
+    __m128i([a.0[0] << c, a.0[1] << c])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub fn _mm_srl_epi64(a: __m128i, count: __m128i) -> __m128i {
+    let c = count.0[0] as u64;
+    if c > 63 {
+        return __m128i([0, 0]);
+    }
+    __m128i([((a.0[0] as u64) >> c) as i64, ((a.0[1] as u64) >> c) as i64])
+}
+// PSRAW / PSRAD: a count above the lane width fills every lane with its sign
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub fn _mm_sra_epi16(a: __m128i, count: __m128i) -> __m128i {
+    unsafe {
+        let c = count.0[0] as u64;
+        let s = if c > 15 { 15 } else { c as u32 };
+        let a = lanes128_i16(a);
+        from128_i16([a[0] >> s, a[1] >> s, a[2] >> s, a[3] >> s, a[4] >> s, a[5] >> s, a[6] >> s, a[7] >> s])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub fn _mm_sra_epi32(a: __m128i, count: __m128i) -> __m128i {
+    unsafe {
+        let c = count.0[0] as u64;
+        let s = if c > 31 { 31 } else { c as u32 };
+        let a = lanes128_i32(a);
+        from128_i32([a[0] >> s, a[1] >> s, a[2] >> s, a[3] >> s])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm_sllv_epi64(a: __m128i, count: __m128i) -> __m128i {
+    let s = |x: i64, n: i64| if (n as u64) < 64 { x << n } else { 0 };
+    __m128i([s(a.0[0], count.0[0]), s(a.0[1], count.0[1])])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm_srlv_epi64(a: __m128i, count: __m128i) -> __m128i {
+    let s = |x: i64, n: i64| if (n as u64) < 64 { ((x as u64) >> n) as i64 } else { 0 };
+    __m128i([s(a.0[0], count.0[0]), s(a.0[1], count.0[1])])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm_srlv_epi32(a: __m128i, count: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_u32(a);
+        let c = lanes128_u32(count);
+        let s = |x: u32, n: u32| if n < 32 { x >> n } else { 0 };
+        from128_u32([s(a[0], c[0]), s(a[1], c[1]), s(a[2], c[2]), s(a[3], c[3])])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm_srav_epi32(a: __m128i, count: __m128i) -> __m128i {
+    unsafe {
+        let a = lanes128_i32(a);
+        let c = lanes128_u32(count);
+        let s = |x: i32, n: u32| if n < 32 { x >> n } else { x >> 31 };
+        from128_i32([s(a[0], c[0]), s(a[1], c[1]), s(a[2], c[2]), s(a[3], c[3])])
+    }
+}
+/// a non-temporal hint on hardware; the same store here
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub unsafe fn _mm_stream_si128(mem_addr: *mut __m128i, a: __m128i) {
+    crate::ptr::write(mem_addr, a)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse2"))]
+pub unsafe fn _mm_stream_si32(mem_addr: *mut i32, a: i32) {
+    crate::ptr::write(mem_addr, a)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_testc_si128(a: __m128i, mask: __m128i) -> i32 {
+    if (!a.0[0] & mask.0[0]) | (!a.0[1] & mask.0[1]) == 0 { 1 } else { 0 }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_testnzc_si128(a: __m128i, mask: __m128i) -> i32 {
+    let z = (a.0[0] & mask.0[0]) | (a.0[1] & mask.0[1]) == 0;
+    let c = (!a.0[0] & mask.0[0]) | (!a.0[1] & mask.0[1]) == 0;
+    if !z && !c { 1 } else { 0 }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_test_all_ones(a: __m128i) -> i32 {
+    if a.0[0] & a.0[1] == -1 { 1 } else { 0 }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_test_all_zeros(a: __m128i, mask: __m128i) -> i32 {
+    _mm_testz_si128(a, mask)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse4.1"))]
+pub fn _mm_test_mix_ones_zeros(a: __m128i, mask: __m128i) -> i32 {
+    _mm_testnzc_si128(a, mask)
+}
+
+// ---- AVX/AVX2 256-bit integer intrinsics ----
+unsafe fn a3_map8(a: __m256i, b: __m256i, f: impl Fn(i8, i8) -> i8) -> __m256i {
+    let (mut r, b) = (lanes256_i8(a), lanes256_i8(b));
+    let mut i = 0;
+    while i < 32 {
+        r[i] = f(r[i], b[i]);
+        i += 1;
+    }
+    from256_i8(r)
+}
+unsafe fn a3_map16(a: __m256i, b: __m256i, f: impl Fn(i16, i16) -> i16) -> __m256i {
+    let (mut r, b) = (lanes256_i16(a), lanes256_i16(b));
+    let mut i = 0;
+    while i < 16 {
+        r[i] = f(r[i], b[i]);
+        i += 1;
+    }
+    from256_i16(r)
+}
+unsafe fn a3_map32(a: __m256i, b: __m256i, f: impl Fn(i32, i32) -> i32) -> __m256i {
+    let (mut r, b) = (lanes256_i32(a), lanes256_i32(b));
+    let mut i = 0;
+    while i < 8 {
+        r[i] = f(r[i], b[i]);
+        i += 1;
+    }
+    from256_i32(r)
+}
+unsafe fn a3_map64(a: __m256i, b: __m256i, f: impl Fn(i64, i64) -> i64) -> __m256i {
+    __m256i([f(a.0[0], b.0[0]), f(a.0[1], b.0[1]), f(a.0[2], b.0[2]), f(a.0[3], b.0[3])])
+}
+/// the pairs of a then of b within each 128-bit lane
+unsafe fn a3_h16(a: __m256i, b: __m256i, f: impl Fn(i16, i16) -> i16) -> __m256i {
+    let (a, b) = (lanes256_i16(a), lanes256_i16(b));
+    let mut r = [0i16; 16];
+    let mut i = 0;
+    while i < 16 {
+        let (lane, k) = (i & 8, i & 3);
+        let s = if i & 4 == 0 { &a } else { &b };
+        r[i] = f(s[lane + 2 * k], s[lane + 2 * k + 1]);
+        i += 1;
+    }
+    from256_i16(r)
+}
+unsafe fn a3_h32(a: __m256i, b: __m256i, f: impl Fn(i32, i32) -> i32) -> __m256i {
+    let (a, b) = (lanes256_i32(a), lanes256_i32(b));
+    let mut r = [0i32; 8];
+    let mut i = 0;
+    while i < 8 {
+        let (lane, k) = (i & 4, i & 1);
+        let s = if i & 2 == 0 { &a } else { &b };
+        r[i] = f(s[lane + 2 * k], s[lane + 2 * k + 1]);
+        i += 1;
+    }
+    from256_i32(r)
+}
+/// bytes moved by `shift` positions within each 128-bit lane (negative: toward lane byte 0), zero fill
+unsafe fn a3_byte_shift(a: __m256i, shift: i32) -> __m256i {
+    let a = lanes256_u8(a);
+    let mut r = [0u8; 32];
+    let mut i = 0;
+    while i < 32 {
+        let src = (i & 15) as i32 - shift;
+        if src >= 0 && src < 16 {
+            r[i] = a[(i & 16) + src as usize];
+        }
+        i += 1;
+    }
+    from256_u8(r)
+}
+/// the shift count of the SLL/SRL/SRA forms: the low 64 bits of `count`, unsigned
+fn a3_count(count: __m128i) -> u64 {
+    count.0[0] as u64
+}
+unsafe fn a3_gather<T>(slice: *const T, off: i64, scale: i32) -> T {
+    crate::ptr::read_unaligned((slice as *const u8).offset((off * scale as i64) as isize) as *const T)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_abs_epi8(a: __m256i) -> __m256i {
+    unsafe {
+        a3_map8(a, a, |x, _| x.wrapping_abs())
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_abs_epi16(a: __m256i) -> __m256i {
+    unsafe {
+        a3_map16(a, a, |x, _| x.wrapping_abs())
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_abs_epi32(a: __m256i) -> __m256i {
+    unsafe {
+        a3_map32(a, a, |x, _| x.wrapping_abs())
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_adds_epi8(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map8(a, b, |x, y| x.saturating_add(y))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_adds_epi16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map16(a, b, |x, y| x.saturating_add(y))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_adds_epu8(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map8(a, b, |x, y| (x as u8).saturating_add(y as u8) as i8)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_adds_epu16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map16(a, b, |x, y| (x as u16).saturating_add(y as u16) as i16)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_subs_epi8(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map8(a, b, |x, y| x.saturating_sub(y))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_subs_epi16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map16(a, b, |x, y| x.saturating_sub(y))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_subs_epu16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map16(a, b, |x, y| (x as u16).saturating_sub(y as u16) as i16)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_avg_epu8(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map8(a, b, |x, y| ((x as u8 as u32 + y as u8 as u32 + 1) >> 1) as i8)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_avg_epu16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map16(a, b, |x, y| ((x as u16 as u32 + y as u16 as u32 + 1) >> 1) as i16)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm256_blend_epi16<const IMM8: i32>(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        let (mut r, b) = (lanes256_i16(a), lanes256_i16(b));
+        let mut i = 0;
+        while i < 16 {
+            if (IMM8 >> (i & 7)) & 1 != 0 {
+                r[i] = b[i];
+            }
+            i += 1;
+        }
+        from256_i16(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_broadcastb_epi8(a: __m128i) -> __m256i {
+    unsafe {
+        from256_i8([lanes128_i8(a)[0]; 32])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_broadcastw_epi16(a: __m128i) -> __m256i {
+    unsafe {
+        from256_i16([lanes128_i16(a)[0]; 16])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_broadcastq_epi64(a: __m128i) -> __m256i {
+    unsafe {
+        __m256i([a.0[0]; 4])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm256_bslli_epi128<const IMM8: i32>(a: __m256i) -> __m256i {
+    unsafe {
+        let sh = if IMM8 as u32 & 0xff > 15 { 16 } else { IMM8 & 0xff };
+        a3_byte_shift(a, sh)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm256_slli_si256<const IMM8: i32>(a: __m256i) -> __m256i {
+    unsafe {
+        let sh = if IMM8 as u32 & 0xff > 15 { 16 } else { IMM8 & 0xff };
+        a3_byte_shift(a, sh)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm256_bsrli_epi128<const IMM8: i32>(a: __m256i) -> __m256i {
+    unsafe {
+        let sh = if IMM8 as u32 & 0xff > 15 { 16 } else { IMM8 & 0xff };
+        a3_byte_shift(a, -sh)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm256_srli_si256<const IMM8: i32>(a: __m256i) -> __m256i {
+    unsafe {
+        let sh = if IMM8 as u32 & 0xff > 15 { 16 } else { IMM8 & 0xff };
+        a3_byte_shift(a, -sh)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cmpeq_epi64(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map64(a, b, |x, y| -((x == y) as i64))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cmpgt_epi64(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map64(a, b, |x, y| -((x > y) as i64))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cvtepi16_epi32(a: __m128i) -> __m256i {
+    unsafe {
+        let a = lanes128_i16(a);
+        from256_i32([a[0] as i32, a[1] as i32, a[2] as i32, a[3] as i32, a[4] as i32, a[5] as i32, a[6] as i32, a[7] as i32])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cvtepi16_epi64(a: __m128i) -> __m256i {
+    unsafe {
+        let a = lanes128_i16(a);
+        __m256i([a[0] as i64, a[1] as i64, a[2] as i64, a[3] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cvtepi32_epi64(a: __m128i) -> __m256i {
+    unsafe {
+        let a = lanes128_i32(a);
+        __m256i([a[0] as i64, a[1] as i64, a[2] as i64, a[3] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cvtepi8_epi16(a: __m128i) -> __m256i {
+    unsafe {
+        let a = lanes128_i8(a);
+        from256_i16([a[0] as i16, a[1] as i16, a[2] as i16, a[3] as i16, a[4] as i16, a[5] as i16, a[6] as i16, a[7] as i16, a[8] as i16, a[9] as i16, a[10] as i16, a[11] as i16, a[12] as i16, a[13] as i16, a[14] as i16, a[15] as i16])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cvtepi8_epi64(a: __m128i) -> __m256i {
+    unsafe {
+        let a = lanes128_i8(a);
+        __m256i([a[0] as i64, a[1] as i64, a[2] as i64, a[3] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cvtepu16_epi32(a: __m128i) -> __m256i {
+    unsafe {
+        let a = lanes128_u16(a);
+        from256_i32([a[0] as i32, a[1] as i32, a[2] as i32, a[3] as i32, a[4] as i32, a[5] as i32, a[6] as i32, a[7] as i32])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cvtepu16_epi64(a: __m128i) -> __m256i {
+    unsafe {
+        let a = lanes128_u16(a);
+        __m256i([a[0] as i64, a[1] as i64, a[2] as i64, a[3] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cvtepu32_epi64(a: __m128i) -> __m256i {
+    unsafe {
+        let a = lanes128_u32(a);
+        __m256i([a[0] as i64, a[1] as i64, a[2] as i64, a[3] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cvtepu8_epi32(a: __m128i) -> __m256i {
+    unsafe {
+        let a = lanes128_u8(a);
+        from256_i32([a[0] as i32, a[1] as i32, a[2] as i32, a[3] as i32, a[4] as i32, a[5] as i32, a[6] as i32, a[7] as i32])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_cvtepu8_epi64(a: __m128i) -> __m256i {
+    unsafe {
+        let a = lanes128_u8(a);
+        __m256i([a[0] as i64, a[1] as i64, a[2] as i64, a[3] as i64])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_cvtps_epi32(a: __m256) -> __m256i {
+    unsafe {
+        let rm = mxcsr_rm();
+        let mut r = [0i32; 8];
+        let mut i = 0;
+        while i < 8 {
+            r[i] = f32_to_i32(a.0[i], rm);
+            i += 1;
+        }
+        from256_i32(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_cvtsi256_si32(a: __m256i) -> i32 {
+    unsafe {
+        lanes256_i32(a)[0]
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm256_extract_epi16<const INDEX: i32>(a: __m256i) -> i32 {
+    unsafe {
+        lanes256_u16(a)[(INDEX & 15) as usize] as i32
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm256_extract_epi8<const INDEX: i32>(a: __m256i) -> i32 {
+    unsafe {
+        lanes256_u8(a)[(INDEX & 31) as usize] as i32
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_hadd_epi16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_h16(a, b, |x, y| x.wrapping_add(y))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_hadd_epi32(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_h32(a, b, |x, y| x.wrapping_add(y))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_hadds_epi16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_h16(a, b, |x, y| x.saturating_add(y))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_hsub_epi16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_h16(a, b, |x, y| x.wrapping_sub(y))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_hsub_epi32(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_h32(a, b, |x, y| x.wrapping_sub(y))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_hsubs_epi16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_h16(a, b, |x, y| x.saturating_sub(y))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm256_i32gather_epi32<const SCALE: i32>(slice: *const i32, offsets: __m256i) -> __m256i {
+    let o = lanes256_i32(offsets);
+    let mut r = [0i32; 8];
+    let mut i = 0;
+    while i < 8 {
+        r[i] = a3_gather(slice, o[i] as i64, SCALE);
+        i += 1;
+    }
+    from256_i32(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm256_mask_i32gather_epi32<const SCALE: i32>(src: __m256i, slice: *const i32, offsets: __m256i, mask: __m256i) -> __m256i {
+    let (o, m) = (lanes256_i32(offsets), lanes256_i32(mask));
+    let mut r = lanes256_i32(src);
+    let mut i = 0;
+    while i < 8 {
+        if m[i] < 0 {
+            r[i] = a3_gather(slice, o[i] as i64, SCALE);
+        }
+        i += 1;
+    }
+    from256_i32(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm256_i32gather_epi64<const SCALE: i32>(slice: *const i64, offsets: __m128i) -> __m256i {
+    let o = lanes128_i32(offsets);
+    let mut r = [0i64; 4];
+    let mut i = 0;
+    while i < 4 {
+        r[i] = a3_gather(slice, o[i] as i64, SCALE);
+        i += 1;
+    }
+    __m256i(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm256_mask_i32gather_epi64<const SCALE: i32>(src: __m256i, slice: *const i64, offsets: __m128i, mask: __m256i) -> __m256i {
+    let o = lanes128_i32(offsets);
+    let mut r = src.0;
+    let mut i = 0;
+    while i < 4 {
+        if mask.0[i] < 0 {
+            r[i] = a3_gather(slice, o[i] as i64, SCALE);
+        }
+        i += 1;
+    }
+    __m256i(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm256_i64gather_epi32<const SCALE: i32>(slice: *const i32, offsets: __m256i) -> __m128i {
+    let mut r = [0i32; 4];
+    let mut i = 0;
+    while i < 4 {
+        r[i] = a3_gather(slice, offsets.0[i], SCALE);
+        i += 1;
+    }
+    from128_i32(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm256_mask_i64gather_epi32<const SCALE: i32>(src: __m128i, slice: *const i32, offsets: __m256i, mask: __m128i) -> __m128i {
+    let m = lanes128_i32(mask);
+    let mut r = lanes128_i32(src);
+    let mut i = 0;
+    while i < 4 {
+        if m[i] < 0 {
+            r[i] = a3_gather(slice, offsets.0[i], SCALE);
+        }
+        i += 1;
+    }
+    from128_i32(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm256_i64gather_epi64<const SCALE: i32>(slice: *const i64, offsets: __m256i) -> __m256i {
+    let mut r = [0i64; 4];
+    let mut i = 0;
+    while i < 4 {
+        r[i] = a3_gather(slice, offsets.0[i], SCALE);
+        i += 1;
+    }
+    __m256i(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm256_mask_i64gather_epi64<const SCALE: i32>(src: __m256i, slice: *const i64, offsets: __m256i, mask: __m256i) -> __m256i {
+    let mut r = src.0;
+    let mut i = 0;
+    while i < 4 {
+        if mask.0[i] < 0 {
+            r[i] = a3_gather(slice, offsets.0[i], SCALE);
+        }
+        i += 1;
+    }
+    __m256i(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm256_insert_epi16<const INDEX: i32>(a: __m256i, i: i16) -> __m256i {
+    unsafe {
+        let mut r = lanes256_i16(a);
+        r[(INDEX & 15) as usize] = i;
+        from256_i16(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm256_insert_epi32<const INDEX: i32>(a: __m256i, i: i32) -> __m256i {
+    unsafe {
+        let mut r = lanes256_i32(a);
+        r[(INDEX & 7) as usize] = i;
+        from256_i32(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm256_insert_epi8<const INDEX: i32>(a: __m256i, i: i8) -> __m256i {
+    unsafe {
+        let mut r = lanes256_i8(a);
+        r[(INDEX & 31) as usize] = i;
+        from256_i8(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_loadu2_m128i(hiaddr: *const __m128i, loaddr: *const __m128i) -> __m256i {
+    i_join(crate::ptr::read_unaligned(loaddr), crate::ptr::read_unaligned(hiaddr))
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_storeu2_m128i(hiaddr: *mut __m128i, loaddr: *mut __m128i, a: __m256i) {
+    crate::ptr::write_unaligned(loaddr, i_lo(&a));
+    crate::ptr::write_unaligned(hiaddr, i_hi(&a))
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub unsafe fn _mm256_maskload_epi32(mem_addr: *const i32, mask: __m256i) -> __m256i {
+    let m = lanes256_i32(mask);
+    let mut r = [0i32; 8];
+    let mut i = 0;
+    while i < 8 {
+        if m[i] < 0 {
+            r[i] = crate::ptr::read_unaligned(mem_addr.add(i));
+        }
+        i += 1;
+    }
+    from256_i32(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub unsafe fn _mm256_maskload_epi64(mem_addr: *const i64, mask: __m256i) -> __m256i {
+    let mut r = [0i64; 4];
+    let mut i = 0;
+    while i < 4 {
+        if mask.0[i] < 0 {
+            r[i] = crate::ptr::read_unaligned(mem_addr.add(i));
+        }
+        i += 1;
+    }
+    __m256i(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub unsafe fn _mm256_maskstore_epi32(mem_addr: *mut i32, mask: __m256i, a: __m256i) {
+    let (m, a) = (lanes256_i32(mask), lanes256_i32(a));
+    let mut i = 0;
+    while i < 8 {
+        if m[i] < 0 {
+            crate::ptr::write_unaligned(mem_addr.add(i), a[i]);
+        }
+        i += 1;
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub unsafe fn _mm256_maskstore_epi64(mem_addr: *mut i64, mask: __m256i, a: __m256i) {
+    let mut i = 0;
+    while i < 4 {
+        if mask.0[i] < 0 {
+            crate::ptr::write_unaligned(mem_addr.add(i), a.0[i]);
+        }
+        i += 1;
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_max_epi32(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map32(a, b, |x, y| if x > y { x } else { y })
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_max_epi8(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map8(a, b, |x, y| if x > y { x } else { y })
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_min_epi32(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map32(a, b, |x, y| if x < y { x } else { y })
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_min_epi8(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map8(a, b, |x, y| if x < y { x } else { y })
+    }
+}
+/// each 128-bit lane has its own 3 control bits: IMM8[2:0] for the low lane, IMM8[5:3] for the high one
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm256_mpsadbw_epu8<const IMM8: i32>(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        let (a, b) = (lanes256_u8(a), lanes256_u8(b));
+        let mut r = [0u16; 16];
+        let mut i = 0;
+        while i < 16 {
+            let lane = i & 8;
+            let ctl = (IMM8 >> (lane * 3 / 8)) as usize;
+            let (ao, bo) = (2 * lane + (ctl & 4) + (i & 7), 2 * lane + (ctl & 3) * 4);
+            let mut j = 0;
+            while j < 4 {
+                r[i] += a[ao + j].abs_diff(b[bo + j]) as u16;
+                j += 1;
+            }
+            i += 1;
+        }
+        from256_u16(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_mul_epi32(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map64(a, b, |x, y| (x as i32 as i64) * (y as i32 as i64))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_mulhi_epi16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map16(a, b, |x, y| ((x as i32 * y as i32) >> 16) as i16)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_mulhrs_epi16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map16(a, b, |x, y| ((((x as i32 * y as i32) >> 14) + 1) >> 1) as i16)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_packs_epi16(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        let (a, b) = (lanes256_i16(a), lanes256_i16(b));
+        let mut r = [0i8; 32];
+        let mut i = 0;
+        while i < 32 {
+            let s = if i & 8 == 0 { &a } else { &b };
+            let v = s[(i & 16) / 2 + (i & 7)];
+            r[i] = if v > 127 { 127 } else if v < -128 { -128 } else { v as i8 };
+            i += 1;
+        }
+        from256_i8(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm256_permute2f128_si256<const IMM8: i32>(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        let pick = |c: i32| {
+            if c & 8 != 0 {
+                __m128i([0, 0])
+            } else {
+                match c & 3 {
+                    0 => i_lo(&a),
+                    1 => i_hi(&a),
+                    2 => i_lo(&b),
+                    _ => i_hi(&b),
+                }
+            }
+        };
+        i_join(pick(IMM8), pick(IMM8 >> 4))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_setr_epi16(
+    e00: i16, e01: i16, e02: i16, e03: i16, e04: i16, e05: i16, e06: i16, e07: i16,
+    e08: i16, e09: i16, e10: i16, e11: i16, e12: i16, e13: i16, e14: i16, e15: i16,
+) -> __m256i {
+    unsafe {
+        from256_i16([e00, e01, e02, e03, e04, e05, e06, e07, e08, e09, e10, e11, e12, e13, e14, e15])
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm256_shufflehi_epi16<const IMM8: i32>(a: __m256i) -> __m256i {
+    unsafe {
+        let a = lanes256_i16(a);
+        let mut r = a;
+        let mut i = 0;
+        while i < 16 {
+            if i & 4 == 4 {
+                r[i] = a[(i & 12) + ((IMM8 >> (2 * (i & 3))) & 3) as usize];
+            }
+            i += 1;
+        }
+        from256_i16(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm256_shufflelo_epi16<const IMM8: i32>(a: __m256i) -> __m256i {
+    unsafe {
+        let a = lanes256_i16(a);
+        let mut r = a;
+        let mut i = 0;
+        while i < 16 {
+            if i & 4 == 0 {
+                r[i] = a[(i & 12) + ((IMM8 >> (2 * (i & 3))) & 3) as usize];
+            }
+            i += 1;
+        }
+        from256_i16(r)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_sign_epi32(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map32(a, b, |x, y| if y < 0 { x.wrapping_neg() } else if y == 0 { 0 } else { x })
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_sign_epi8(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        a3_map8(a, b, |x, y| if y < 0 { x.wrapping_neg() } else if y == 0 { 0 } else { x })
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_sll_epi16(a: __m256i, count: __m128i) -> __m256i {
+    unsafe {
+        let c = a3_count(count);
+        a3_map16(a, a, |x, _| if c > 15 { 0 } else { x << c })
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_sll_epi32(a: __m256i, count: __m128i) -> __m256i {
+    unsafe {
+        let c = a3_count(count);
+        a3_map32(a, a, |x, _| if c > 31 { 0 } else { x << c })
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_sll_epi64(a: __m256i, count: __m128i) -> __m256i {
+    unsafe {
+        let c = a3_count(count);
+        a3_map64(a, a, |x, _| if c > 63 { 0 } else { x << c })
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_sllv_epi64(a: __m256i, count: __m256i) -> __m256i {
+    unsafe {
+        a3_map64(a, count, |x, c| if c as u64 > 63 { 0 } else { x << c })
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_sra_epi16(a: __m256i, count: __m128i) -> __m256i {
+    unsafe {
+        let c = a3_count(count).min(15);
+        a3_map16(a, a, |x, _| x >> c)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_sra_epi32(a: __m256i, count: __m128i) -> __m256i {
+    unsafe {
+        let c = a3_count(count).min(31);
+        a3_map32(a, a, |x, _| x >> c)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_srav_epi32(a: __m256i, count: __m256i) -> __m256i {
+    unsafe {
+        a3_map32(a, count, |x, c| x >> (c as u32).min(31))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_srl_epi32(a: __m256i, count: __m128i) -> __m256i {
+    unsafe {
+        let c = a3_count(count);
+        a3_map32(a, a, |x, _| if c > 31 { 0 } else { (x as u32 >> c) as i32 })
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_srl_epi64(a: __m256i, count: __m128i) -> __m256i {
+    unsafe {
+        let c = a3_count(count);
+        a3_map64(a, a, |x, _| if c > 63 { 0 } else { (x as u64 >> c) as i64 })
+    }
+}
+/// 32-byte alignment is the caller's contract (as on hardware); the store is the same.
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_store_si256(mem_addr: *mut __m256i, a: __m256i) {
+    crate::ptr::write_unaligned(mem_addr, a)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_stream_si256(mem_addr: *mut __m256i, a: __m256i) {
+    crate::ptr::write_unaligned(mem_addr, a)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_testc_si256(a: __m256i, b: __m256i) -> i32 {
+    let mut i = 0;
+    while i < 4 {
+        if !a.0[i] & b.0[i] != 0 {
+            return 0;
+        }
+        i += 1;
+    }
+    1
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_testnzc_si256(a: __m256i, b: __m256i) -> i32 {
+    let (mut and, mut andn) = (0i64, 0i64);
+    let mut i = 0;
+    while i < 4 {
+        and |= a.0[i] & b.0[i];
+        andn |= !a.0[i] & b.0[i];
+        i += 1;
+    }
+    (and != 0 && andn != 0) as i32
+}
+/// stdarch returns zeros
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_undefined_si256() -> __m256i {
+    __m256i([0; 4])
+}
+
+// ---- AVX/AVX2/FMA 256-bit float intrinsics and helpers ----
+#[inline(always)]
+unsafe fn a4_gather_f32(slice: *const f32, off: i64, scale: i32) -> f32 {
+    crate::ptr::read_unaligned((slice as *const u8).offset((off * scale as i64) as isize) as *const f32)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "sse"))]
+#[allow(non_snake_case)]
+pub fn _MM_TRANSPOSE4_PS(row0: &mut __m128, row1: &mut __m128, row2: &mut __m128, row3: &mut __m128) {
+    let (a, b, c, d) = (row0.0, row1.0, row2.0, row3.0);
+    *row0 = __m128([a[0], b[0], c[0], d[0]]);
+    *row1 = __m128([a[1], b[1], c[1], d[1]]);
+    *row2 = __m128([a[2], b[2], c[2], d[2]]);
+    *row3 = __m128([a[3], b[3], c[3], d[3]]);
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_addsub_ps(a: __m256, b: __m256) -> __m256 {
+    let (a, b) = (a.0, b.0);
+    let mut r = [0f32; 8];
+    let mut i = 0;
+    while i < 8 {
+        r[i] = if i & 1 == 0 { a[i] - b[i] } else { a[i] + b[i] };
+        i += 1;
+    }
+    __m256(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm256_blend_ps<const IMM8: i32>(a: __m256, b: __m256) -> __m256 {
+    let (a, b) = (a.0, b.0);
+    let mut r = [0f32; 8];
+    let mut i = 0;
+    while i < 8 {
+        r[i] = if (IMM8 >> i) & 1 != 0 { b[i] } else { a[i] };
+        i += 1;
+    }
+    __m256(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_broadcast_ps(a: &__m128) -> __m256 {
+    unsafe {
+        ps_join(*a, *a)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_broadcast_ss(f: &f32) -> __m256 {
+    __m256([*f; 8])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+pub fn _mm256_broadcastss_ps(a: __m128) -> __m256 {
+    __m256([a.0[0]; 8])
+}
+/// the upper half is stdarch's _mm_undefined_ps: zeros
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_castps128_ps256(a: __m128) -> __m256 {
+    unsafe {
+        ps_join(a, _mm_setzero_ps())
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_zextps128_ps256(a: __m128) -> __m256 {
+    unsafe {
+        ps_join(a, _mm_setzero_ps())
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_cvtsd_f64(a: __m256d) -> f64 {
+    a.0[0]
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_cvtss_f32(a: __m256) -> f32 {
+    a.0[0]
+}
+/// per 128-bit half: products selected by bits 4..7 (others +0.0) summed as (p0 + p1) + (p2 + p3), stored to the
+/// lanes selected by bits 0..3 (others +0.0). Lane i adds as (p[i^1] + p[i]) + (p[i^3] + p[i^2]): the same sum, in
+/// the operand order hardware shows (it decides which NaN a lane keeps when several products are NaN).
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm256_dp_ps<const IMM8: i32>(a: __m256, b: __m256) -> __m256 {
+    let (a, b) = (a.0, b.0);
+    let mut r = [0f32; 8];
+    let mut h = 0;
+    while h < 8 {
+        let p = |i: usize| if (IMM8 >> (4 + i)) & 1 != 0 { a[h + i] * b[h + i] } else { 0.0 };
+        let mut i = 0;
+        while i < 4 {
+            if (IMM8 >> i) & 1 != 0 {
+                r[h + i] = (p(i ^ 1) + p(i)) + (p(i ^ 3) + p(i ^ 2));
+            }
+            i += 1;
+        }
+        h += 4;
+    }
+    __m256(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "fma"))]
+pub fn _mm256_fmaddsub_ps(a: __m256, b: __m256, c: __m256) -> __m256 {
+    unsafe {
+        let even = ps_join(fma_ps(ps_lo(&a), ps_lo(&b), ps_lo(&c), false, true), fma_ps(ps_hi(&a), ps_hi(&b), ps_hi(&c), false, true));
+        let odd = ps_join(fma_ps(ps_lo(&a), ps_lo(&b), ps_lo(&c), false, !true), fma_ps(ps_hi(&a), ps_hi(&b), ps_hi(&c), false, !true));
+        _mm256_blend_ps::<0xaa>(even, odd)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "fma"))]
+pub fn _mm256_fmsubadd_ps(a: __m256, b: __m256, c: __m256) -> __m256 {
+    unsafe {
+        let even = ps_join(fma_ps(ps_lo(&a), ps_lo(&b), ps_lo(&c), false, false), fma_ps(ps_hi(&a), ps_hi(&b), ps_hi(&c), false, false));
+        let odd = ps_join(fma_ps(ps_lo(&a), ps_lo(&b), ps_lo(&c), false, !false), fma_ps(ps_hi(&a), ps_hi(&b), ps_hi(&c), false, !false));
+        _mm256_blend_ps::<0xaa>(even, odd)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_hadd_ps(a: __m256, b: __m256) -> __m256 {
+    let (a, b) = (a.0, b.0);
+    __m256([a[0] + a[1], a[2] + a[3], b[0] + b[1], b[2] + b[3], a[4] + a[5], a[6] + a[7], b[4] + b[5], b[6] + b[7]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_hsub_ps(a: __m256, b: __m256) -> __m256 {
+    let (a, b) = (a.0, b.0);
+    __m256([a[0] - a[1], a[2] - a[3], b[0] - b[1], b[2] - b[3], a[4] - a[5], a[6] - a[7], b[4] - b[5], b[6] - b[7]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm256_i32gather_ps<const SCALE: i32>(slice: *const f32, offsets: __m256i) -> __m256 {
+    let o = lanes256_i32(offsets);
+    let l = |i: usize| a4_gather_f32(slice, o[i] as i64, SCALE);
+    __m256([l(0), l(1), l(2), l(3), l(4), l(5), l(6), l(7)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm256_mask_i32gather_ps<const SCALE: i32>(src: __m256, slice: *const f32, offsets: __m256i, mask: __m256) -> __m256 {
+    let o = lanes256_i32(offsets);
+    let l = |i: usize| if mask.0[i].is_sign_negative() { a4_gather_f32(slice, o[i] as i64, SCALE) } else { src.0[i] };
+    __m256([l(0), l(1), l(2), l(3), l(4), l(5), l(6), l(7)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(2)]
+pub unsafe fn _mm256_i64gather_ps<const SCALE: i32>(slice: *const f32, offsets: __m256i) -> __m128 {
+    let l = |i: usize| a4_gather_f32(slice, offsets.0[i], SCALE);
+    __m128([l(0), l(1), l(2), l(3)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx2"))]
+#[rustc_legacy_const_generics(4)]
+pub unsafe fn _mm256_mask_i64gather_ps<const SCALE: i32>(src: __m128, slice: *const f32, offsets: __m256i, mask: __m128) -> __m128 {
+    let l = |i: usize| if mask.0[i].is_sign_negative() { a4_gather_f32(slice, offsets.0[i], SCALE) } else { src.0[i] };
+    __m128([l(0), l(1), l(2), l(3)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+#[rustc_legacy_const_generics(2)]
+pub fn _mm256_insertf128_ps<const IMM1: i32>(a: __m256, b: __m128) -> __m256 {
+    unsafe {
+        if IMM1 & 1 == 0 { ps_join(b, ps_hi(&a)) } else { ps_join(ps_lo(&a), b) }
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_loadu2_m128d(hiaddr: *const f64, loaddr: *const f64) -> __m256d {
+    pd_join(vx::vx_load(loaddr as *const u8), vx::vx_load(hiaddr as *const u8))
+}
+/// lanes whose mask sign bit is set are read, the others are 0.0 and not touched in memory
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_maskload_ps(mem_addr: *const f32, mask: __m256i) -> __m256 {
+    let m = lanes256_i32(mask);
+    let l = |i: usize| if m[i] < 0 { crate::ptr::read_unaligned(mem_addr.add(i)) } else { 0.0 };
+    __m256([l(0), l(1), l(2), l(3), l(4), l(5), l(6), l(7)])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_maskstore_ps(mem_addr: *mut f32, mask: __m256i, a: __m256) {
+    let m = lanes256_i32(mask);
+    let mut i = 0;
+    while i < 8 {
+        if m[i] < 0 {
+            crate::ptr::write_unaligned(mem_addr.add(i), a.0[i]);
+        }
+        i += 1;
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_movehdup_ps(a: __m256) -> __m256 {
+    let a = a.0;
+    __m256([a[1], a[1], a[3], a[3], a[5], a[5], a[7], a[7]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_moveldup_ps(a: __m256) -> __m256 {
+    let a = a.0;
+    __m256([a[0], a[0], a[2], a[2], a[4], a[4], a[6], a[6]])
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+#[rustc_legacy_const_generics(1)]
+pub fn _mm256_permute_ps<const IMM8: i32>(a: __m256) -> __m256 {
+    let a = a.0;
+    let mut r = [0f32; 8];
+    let mut i = 0;
+    while i < 8 {
+        r[i] = a[(i & 4) + ((IMM8 >> (2 * (i & 3))) & 3) as usize];
+        i += 1;
+    }
+    __m256(r)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_permutevar_ps(a: __m256, b: __m256i) -> __m256 {
+    unsafe {
+        let (a, b) = (a.0, lanes256_i32(b));
+        let mut r = [0f32; 8];
+        let mut i = 0;
+        while i < 8 {
+            r[i] = a[(i & 4) + (b[i] & 3) as usize];
+            i += 1;
+        }
+        __m256(r)
+    }
+}
+// computed exactly; hardware returns a 12-bit approximation
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_rcp_ps(a: __m256) -> __m256 {
+    unsafe {
+        ps_join(_mm_rcp_ps(ps_lo(&a)), _mm_rcp_ps(ps_hi(&a)))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_rsqrt_ps(a: __m256) -> __m256 {
+    unsafe {
+        ps_join(_mm_rsqrt_ps(ps_lo(&a)), _mm_rsqrt_ps(ps_hi(&a)))
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_set_m128(hi: __m128, lo: __m128) -> __m256 {
+    unsafe {
+        ps_join(lo, hi)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_set_m128d(hi: __m128d, lo: __m128d) -> __m256d {
+    unsafe {
+        pd_join(lo, hi)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_setr_m128d(lo: __m128d, hi: __m128d) -> __m256d {
+    unsafe {
+        pd_join(lo, hi)
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_storeu2_m128(hiaddr: *mut f32, loaddr: *mut f32, a: __m256) {
+    vx::vx_store(loaddr as *mut u8, ps_lo(&a));
+    vx::vx_store(hiaddr as *mut u8, ps_hi(&a));
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_storeu2_m128d(hiaddr: *mut f64, loaddr: *mut f64, a: __m256d) {
+    vx::vx_store(loaddr as *mut u8, pd_lo(&a));
+    vx::vx_store(hiaddr as *mut u8, pd_hi(&a));
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub unsafe fn _mm256_stream_ps(mem_addr: *mut f32, a: __m256) {
+    _mm256_storeu_ps(mem_addr, a)
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_testz_ps(a: __m256, b: __m256) -> i32 {
+    unsafe {
+        (_mm256_movemask_ps(_mm256_and_ps(a, b)) == 0) as i32
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_testc_ps(a: __m256, b: __m256) -> i32 {
+    unsafe {
+        (_mm256_movemask_ps(_mm256_andnot_ps(a, b)) == 0) as i32
+    }
+}
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_testnzc_ps(a: __m256, b: __m256) -> i32 {
+    unsafe {
+        (_mm256_testz_ps(a, b) == 0 && _mm256_testc_ps(a, b) == 0) as i32
+    }
+}
+/// stdarch returns zeros
+#[inline]
+#[cfg_attr(any(target_arch = "x86", target_arch = "x86_64"), target_feature(enable = "avx"))]
+pub fn _mm256_undefined_ps() -> __m256 {
+    unsafe {
+        _mm256_setzero_ps()
+    }
 }
