@@ -6112,7 +6112,8 @@ unsafe fn apply_locked(up: *mut Unit, edits: Vec<Edit>, mut pre: Vec<Option<Resu
         let use_refs: Vec<&[u8]> = use_names.iter().map(|n| n.as_slice()).collect();
         for i in 0..u.prog.defs.len() {
             let d = DefId(i as u32);
-            if use_refs.is_empty() || layout_defs.contains(&d) || !matches!(u.prog.def(d).kind, DefKind::Struct | DefKind::Enum | DefKind::Union) || !visible_crates[u.prog.def(d).krate as usize] || !item_mentions(&u.prog, d, &use_refs) {
+            // a type this edit or an earlier one removed is no longer the program's: nothing reads it
+            if use_refs.is_empty() || layout_defs.contains(&d) || !def_is_bound(&u.prog, d) || !matches!(u.prog.def(d).kind, DefKind::Struct | DefKind::Enum | DefKind::Union) || !visible_crates[u.prog.def(d).krate as usize] || !item_mentions(&u.prog, d, &use_refs) {
                 continue;
             }
             let (fresh_adt, _) = u.tcx.adt_fresh(&crate::tcx::EvalCx::new(&u.prog, &u.tcx, crate::tcx::TypingEnv::fully_monomorphized(&u.prog), &crate::tcx::EvalState::new()), &u.prog, d);

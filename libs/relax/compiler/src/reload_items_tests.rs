@@ -309,3 +309,45 @@ fn a_live_edit_of_a_file_declared_as_two_modules_reaches_both() {
         });
     });
 }
+
+const USE_TYPED: &str = r#"use std::collections::BTreeMap as M;
+
+pub struct Probe { pub m: M<u32, u32> }
+pub struct Kept { pub m: M<u32, u32> }
+
+pub fn holds(out: &mut u64) {
+    let k = Kept { m: M::new() };
+    *out = 1 + k.m.len() as u64;
+}
+"#;
+
+/// A struct removed with the `use` its field's type was written through is no longer the
+/// program's: the edit patches. A struct that stays while the `use` names another type changed
+/// its field's type under unchanged text: that one alone asks for a restart, also after the
+/// removed struct of an earlier edit is long gone.
+#[test]
+fn a_struct_removed_with_the_use_its_field_named_patches() {
+    in_child("reload_items_tests::a_struct_removed_with_the_use_its_field_named_patches", &["removed", "kept"], |case| {
+        live_app("use-typed-struct", &[("lib.rs", USE_TYPED)], &["holds"], |call, edit| {
+            assert_eq!(call("holds"), 1);
+            if case == "removed" {
+                let gone = edit("lib.rs", &[
+                    ("use std::collections::BTreeMap as M;\n", ""),
+                    ("pub struct Probe { pub m: M<u32, u32> }\n", ""),
+                    ("pub struct Kept { pub m: M<u32, u32> }\n", ""),
+                    ("    let k = Kept { m: M::new() };\n    *out = 1 + k.m.len() as u64;", "    *out = 2;"),
+                ]);
+                assert_eq!(gone.rung, Rung::Patch, "{:?}", gone.lines);
+                assert_eq!(call("holds"), 2);
+            } else {
+                let first = edit("lib.rs", &[("pub struct Probe { pub m: M<u32, u32> }\n", "")]);
+                assert_eq!(first.rung, Rung::Patch, "{:?}", first.lines);
+                let retyped = edit("lib.rs", &[("BTreeMap as M", "HashMap as M")]);
+                assert_eq!(retyped.rung, Rung::Restart, "{:?}", retyped.lines);
+                assert!(retyped.lines.iter().any(|l| l.contains("struct `Kept`: field `m` changed its type")), "{:?}", retyped.lines);
+                assert!(!retyped.lines.iter().any(|l| l.contains("`Probe`")), "a removed struct is not re-read: {:?}", retyped.lines);
+                assert_eq!(call("holds"), 1);
+            }
+        });
+    });
+}
