@@ -25440,9 +25440,19 @@ pub struct ConstCert {
 impl ConstCert {
     /// `other` read by the evaluation this certificate is for
     pub(crate) fn take_in(&mut self, other: &ConstCert) {
-        self.keys.extend(other.keys.iter().cloned());
-        self.items.extend(other.items.iter().cloned());
-        self.idents.extend(other.idents.iter().copied());
+        // a set: a value read twice, or through two values that read it, is taken in once, so a
+        // chain of constants that each read the one before twice stays linear, not 2^n
+        fn add_new<T: Clone + Eq + std::hash::Hash>(mine: &mut Vec<T>, theirs: &[T]) {
+            if theirs.is_empty() { return; }
+            let fresh: Vec<T> = {
+                let mut seen: std::collections::HashSet<&T> = mine.iter().collect();
+                theirs.iter().filter(|t| seen.insert(*t)).cloned().collect()
+            };
+            mine.extend(fresh);
+        }
+        add_new(&mut self.keys, &other.keys);
+        add_new(&mut self.items, &other.items);
+        add_new(&mut self.idents, &other.idents);
         self.complete &= other.complete;
     }
 }
