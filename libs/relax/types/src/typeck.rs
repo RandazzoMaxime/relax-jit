@@ -4081,7 +4081,10 @@ impl<'a> Fcx<'a> {
     /// collect applicable candidates and collapse only a shared trait container.
     fn trait_item_for(&mut self, t: TyId, name: Sym) -> Option<(DefId, Vec<TyId>)> {
         let mut candidates = Vec::new();
-        for (td, args) in self.param_bounds(t) {
+        // a type parameter's where-clauses are candidates ahead of the traits in scope; a
+        // projection's are not (probe.rs assemble_probe: ty::Param only): it sees the traits in scope
+        let bounds = if matches!(self.tcx.tys.kind(t), TyKind::Param(_)) { self.param_bounds(t) } else { Vec::new() };
+        for (td, args) in bounds {
             for &item in &self.prog.traits[self.prog.def(td).sub as usize] {
                 // value namespace: an associated type of the same name is another item
                 if self.prog.def(item).name == name && matches!(self.prog.def(item).kind, DefKind::AssocFn | DefKind::AssocConst) {
@@ -4140,9 +4143,10 @@ impl<'a> Fcx<'a> {
     /// parameters and inference variables keep every candidate (bounds decide).
     fn scoped_trait_methods(&mut self, t: TyId, s: Sym) -> Vec<(DefId, DefId)> {
         let mut tm = self.extension_candidates(t, s, DefKind::AssocFn);
-        // a param / rigid projection of a generic body: its bounds' methods, supertraits
-        // included (rustc assemble_inherent_candidates_from_param: where-clause candidates)
-        if matches!(self.tcx.tys.kind(t), TyKind::Param(_) | TyKind::Alias(_, AliasTy { kind: AliasTyKind::Projection { .. }, .. })) {
+        // a param of a generic body: its bounds' methods, supertraits included (rustc
+        // assemble_inherent_candidates_from_param: where-clause candidates). A rigid projection
+        // has none of its own: a trait it is bound by is a candidate when it is in scope.
+        if matches!(self.tcx.tys.kind(t), TyKind::Param(_)) {
             for (td, _) in self.param_bounds(t) {
                 for &it in &self.prog.traits[self.prog.def(td).sub as usize] {
                     if self.prog.def(it).name == s && self.prog.def(it).kind == DefKind::AssocFn && !tm.iter().any(|x| x.0 == it) {
