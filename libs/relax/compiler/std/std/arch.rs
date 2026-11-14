@@ -78,6 +78,12 @@ pub mod detect {
         Avx512bitalg = 59,
         Avx512vpopcntdq = 60,
         Avxvnni = 61,
+        Sse4a = 106,
+        Tbm = 107,
+        Xsaveopt = 108,
+        Xsavec = 109,
+        Xsaves = 110,
+        Rtm = 111,
         // aarch64, the rest of std_detect's list (bits 64 on)
         Bti = 64,
         Cssc = 65,
@@ -230,6 +236,7 @@ pub mod detect {
         // Never execute XGETBV until both CPU XSAVE and OSXSAVE are set.
         let xcr0 = if p.ecx & (3 << 26) == (3 << 26) { unsafe { _xgetbv(0) } } else { 0 };
         let avx_state = xcr0 & 6 == 6;
+        let xs = if p.ecx & (3 << 26) == (3 << 26) && root.eax >= 0xd { __cpuid_count(0xd, 1).eax } else { 0 };
         let avx = avx_state && p.ecx & (1 << 28) != 0;
         let fma = avx && p.ecx & (1 << 12) != 0;
         let f16c = avx && p.ecx & (1 << 29) != 0;
@@ -288,6 +295,13 @@ pub mod detect {
             | bit(Feature::Avx512bitalg, avx512 && e.ecx & (1 << 12) != 0)
             | bit(Feature::Avx512vpopcntdq, avx512 && e.ecx & (1 << 14) != 0)
             | bit(Feature::Avxvnni, avx && e1.eax & (1 << 4) != 0)
+            // std_detect x86.rs: AMD's leaf 0x80000001 ecx, leaf 0xD.1 eax under CPU and OS xsave
+            | bit(Feature::Sse4a, ext & (1 << 6) != 0)
+            | bit(Feature::Tbm, ext & (1 << 21) != 0)
+            | bit(Feature::Xsaveopt, xs & 1 != 0)
+            | bit(Feature::Xsavec, xs & (1 << 1) != 0)
+            | bit(Feature::Xsaves, xs & (1 << 3) != 0)
+            | bit(Feature::Rtm, e.ebx & (1 << 11) != 0)
     }
 
     #[cfg(all(any(target_os = "linux", target_os = "android"), target_arch = "aarch64"))]
@@ -511,6 +525,12 @@ macro_rules! is_x86_feature_detected {
     ("avx512bitalg") => { cfg!(target_feature = "avx512bitalg") || $crate::arch::detect::check($crate::arch::detect::Feature::Avx512bitalg) };
     ("avx512vpopcntdq") => { cfg!(target_feature = "avx512vpopcntdq") || $crate::arch::detect::check($crate::arch::detect::Feature::Avx512vpopcntdq) };
     ("avxvnni") => { cfg!(target_feature = "avxvnni") || $crate::arch::detect::check($crate::arch::detect::Feature::Avxvnni) };
+    ("sse4a") => { cfg!(target_feature = "sse4a") || $crate::arch::detect::check($crate::arch::detect::Feature::Sse4a) };
+    ("tbm") => { cfg!(target_feature = "tbm") || $crate::arch::detect::check($crate::arch::detect::Feature::Tbm) };
+    ("xsaveopt") => { cfg!(target_feature = "xsaveopt") || $crate::arch::detect::check($crate::arch::detect::Feature::Xsaveopt) };
+    ("xsavec") => { cfg!(target_feature = "xsavec") || $crate::arch::detect::check($crate::arch::detect::Feature::Xsavec) };
+    ("xsaves") => { cfg!(target_feature = "xsaves") || $crate::arch::detect::check($crate::arch::detect::Feature::Xsaves) };
+    ("rtm") => { cfg!(target_feature = "rtm") || $crate::arch::detect::check($crate::arch::detect::Feature::Rtm) };
     ($t:tt,) => { $crate::is_x86_feature_detected!($t) };
     ($t:tt) => { compile_error!(concat!("unknown x86 target feature: ", $t)) };
 }
