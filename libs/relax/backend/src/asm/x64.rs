@@ -292,6 +292,7 @@ fn parse_imm(ctx: &Ctx, t: &[Tok]) -> Result<Value, String> {
 }
 
 fn parse_intel(ctx: &Ctx, t: &[Tok]) -> Result<Op, String> {
+    let t = strip_plt(t);
     let mut i = 0;
     let mut size = 0u16;
     if let Some(Tok::Ident(s)) = t.get(i) {
@@ -378,8 +379,17 @@ fn parse_num(s: &str) -> Option<i128> {
     i128::from_str_radix(d, radix).ok()
 }
 
+/// `sym@PLT`: a call through the procedure linkage table is a call of the symbol here (the
+/// loader binds it directly).
+fn strip_plt(t: &[Tok]) -> &[Tok] {
+    match t {
+        [head @ .., at, Tok::Ident(k)] if at.is(b'@') && k.eq_ignore_ascii_case("plt") && !head.is_empty() => head,
+        _ => t,
+    }
+}
+
 fn parse_att(ctx: &Ctx, t: &[Tok], branch: bool) -> Result<Op, String> {
-    let mut t = t;
+    let mut t = strip_plt(t);
     if t.first().is_some_and(|x| x.is(b'*')) {
         t = &t[1..];
     }

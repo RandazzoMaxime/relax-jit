@@ -921,3 +921,16 @@ fn evex_moves_parts_and_x87_environment() {
     }
     assert_eq!(text(&asm_att("fnstenv (%r8)\nstmxcsr 0x18(%r8)").unwrap()), vec![0x41, 0xd9, 0x30, 0x41, 0x0f, 0xae, 0x58, 0x18]);
 }
+
+/// `call sym@PLT` (crash-context's getcontext): the call of the symbol, as `call sym`.
+#[test]
+fn a_plt_call_is_a_call_of_the_symbol() {
+    for att in [true, false] {
+        let asm = |src: &str| assemble(Arch::X64, Format::Elf, Kind::Global, &[Piece::Text(src.to_string())], &[], att).unwrap_or_else(|e| panic!("`{src}`: {e}"));
+        let (plain, plt) = (asm("call sigprocmask\nret"), asm("call sigprocmask@PLT\nret"));
+        assert_eq!(hex(&text(&plt)), hex(&text(&plain)));
+        assert_eq!(hex(&text(&plt)), "e8 00 00 00 00 c3");
+        assert_eq!(format!("{:?}", plt.fixups), format!("{:?}", plain.fixups));
+        assert_eq!(hex(&text(&asm("jmp memcpy@plt"))), hex(&text(&asm("jmp memcpy"))));
+    }
+}
